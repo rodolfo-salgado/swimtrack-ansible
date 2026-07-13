@@ -1,0 +1,10 @@
+---
+- name: Validate the SwimTrack GPU host
+  hosts: gpu_hosts
+  gather_facts: true
+  any_errors_fatal: true
+  tasks:
+    - name: Run the SwimTrack AI preflight
+      ansible.builtin.include_role:
+        name: swimtrack_ai
+        tasks_from: preflight

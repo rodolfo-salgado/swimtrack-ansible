@@ -1,0 +1,32 @@
+---
+swimtrack_ai_revision: main
+swimtrack_ai_remote_user: grupo1
+swimtrack_ai_remote_home: "/home/{{ swimtrack_ai_remote_user }}"
+swimtrack_ai_repo_dir: "{{ swimtrack_ai_remote_home }}/swimtrack/swimtrack-ai"
+swimtrack_ai_uv_path: "{{ swimtrack_ai_remote_home }}/.local/bin/uv"
+swimtrack_ai_python_path: /usr/bin/python3.12
+
+swimtrack_ai_local_model_dir: "{{ playbook_dir }}/../../swimtrack-poc/artifacts/models"
+swimtrack_ai_model_dir: "{{ swimtrack_ai_remote_home }}/.local/share/swimtrack-ai/models"
+swimtrack_ai_cache_dir: "{{ swimtrack_ai_remote_home }}/.cache/swimtrack-ai"
+swimtrack_ai_config_dir: "{{ swimtrack_ai_remote_home }}/.config/swimtrack-ai"
+swimtrack_ai_environment_file: "{{ swimtrack_ai_config_dir }}/swimtrack-ai.env"
+swimtrack_ai_systemd_dir: "{{ swimtrack_ai_remote_home }}/.config/systemd/user"
+swimtrack_ai_service_name: swimtrack-ai.service
+swimtrack_ai_sync_marker: "{{ swimtrack_ai_repo_dir }}/.venv/.swimtrack-uv-lock.sha256"
+swimtrack_ai_local_secret_file: "{{ lookup('ansible.builtin.env', 'HOME') }}/.ansible/swimtrack-ai/auth_token"
+
+swimtrack_ai_onnx_filename: rtdetrv2_s.onnx
+swimtrack_ai_engine_filename: rtdetrv2_s_fp16.engine
+swimtrack_ai_bind_host: 127.0.0.1
+swimtrack_ai_port: 8001
+swimtrack_ai_gpu_index: 0
+swimtrack_ai_max_batch_frames: 8
+swimtrack_ai_workspace_gb: 4
+swimtrack_ai_minimum_free_kib: 8388608
+swimtrack_ai_ready_retries: 120
+swimtrack_ai_ready_delay_seconds: 10
+
+swimtrack_ai_systemd_environment:
+  XDG_RUNTIME_DIR: "/run/user/{{ ansible_facts['user_uid'] }}"
+  DBUS_SESSION_BUS_ADDRESS: "unix:path=/run/user/{{ ansible_facts['user_uid'] }}/bus"

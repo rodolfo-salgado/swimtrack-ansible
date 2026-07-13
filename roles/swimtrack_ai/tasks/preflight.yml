@@ -1,0 +1,148 @@
+---
+- name: Validate the remote identity and platform
+  ansible.builtin.assert:
+    that:
+      - ansible_facts['user_id'] == swimtrack_ai_remote_user
+      - ansible_facts['system'] == "Linux"
+      - ansible_facts['architecture'] == "x86_64"
+    fail_msg: "The target must be Linux x86_64 and the effective remote user must be {{ swimtrack_ai_remote_user }}."
+
+- name: Inspect required remote paths
+  ansible.builtin.stat:
+    path: "{{ item }}"
+  loop:
+    - "{{ swimtrack_ai_uv_path }}"
+    - "{{ swimtrack_ai_python_path }}"
+    - "{{ swimtrack_ai_repo_dir }}/.git"
+    - "{{ swimtrack_ai_repo_dir }}/pyproject.toml"
+    - "{{ swimtrack_ai_repo_dir }}/uv.lock"
+    - "/run/user/{{ ansible_facts['user_uid'] }}/bus"
+  register: swimtrack_ai_remote_paths
+
+- name: Assert required remote paths exist
+  ansible.builtin.assert:
+    that:
+      - swimtrack_ai_remote_paths.results | map(attribute='stat.exists') | min
+    fail_msg: "The remote checkout, uv, Python 3.12, or the user systemd bus is missing."
+
+- name: Inspect local model artifacts
+  ansible.builtin.stat:
+    path: "{{ swimtrack_ai_local_model_dir }}/{{ item }}"
+    checksum_algorithm: sha256
+  loop:
+    - "{{ swimtrack_ai_onnx_filename }}"
+    - "{{ swimtrack_ai_onnx_filename }}.data"
+  register: swimtrack_ai_local_models
+  delegate_to: localhost
+  run_once: true
+
+- name: Assert local model artifacts exist
+  ansible.builtin.assert:
+    that:
+      - swimtrack_ai_local_models.results | map(attribute='stat.exists') | min
+    fail_msg: "The ONNX model or its external data file is missing from {{ swimtrack_ai_local_model_dir }}."
+  run_once: true
+
+- name: Read the remote glibc version
+  ansible.builtin.command:
+    argv:
+      - getconf
+      - GNU_LIBC_VERSION
+  register: swimtrack_ai_glibc
+  changed_when: false
+  check_mode: false
+
+- name: Require glibc 2.28 or newer
+  ansible.builtin.assert:
+    that:
+      - swimtrack_ai_glibc.stdout.split()[-1] is ansible.builtin.version('2.28', '>=')
+    fail_msg: "TensorRT's Python wheel requires glibc 2.28 or newer; target reported {{ swimtrack_ai_glibc.stdout }}."
+
+- name: Query GPU zero
+  ansible.builtin.command:
+    argv:
+      - nvidia-smi
+      - "--id={{ swimtrack_ai_gpu_index }}"
+      - --query-gpu=index,name,driver_version,memory.total
+      - --format=csv,noheader
+  register: swimtrack_ai_gpu
+  changed_when: false
+  check_mode: false
+
+- name: Assert GPU zero is available
+  ansible.builtin.assert:
+    that:
+      - swimtrack_ai_gpu.rc == 0
+      - swimtrack_ai_gpu.stdout | length > 0
+    fail_msg: "nvidia-smi could not access GPU {{ swimtrack_ai_gpu_index }}."
+
+- name: Check free space on the remote home filesystem
+  ansible.builtin.command:
+    argv:
+      - df
+      - -Pk
+      - "{{ swimtrack_ai_repo_dir }}"
+  register: swimtrack_ai_disk
+  changed_when: false
+  check_mode: false
+
+- name: Require at least eight GiB of free space
+  ansible.builtin.assert:
+    that:
+      - swimtrack_ai_disk.stdout_lines[-1].split()[3] | int >= swimtrack_ai_minimum_free_kib | int
+    fail_msg: "At least 8 GiB free are required for TensorRT, CUDA wheels, the virtual environment, and the engine cache."
+
+- name: Verify user lingering is enabled
+  ansible.builtin.command:
+    argv:
+      - loginctl
+      - show-user
+      - "{{ swimtrack_ai_remote_user }}"
+      - --property=Linger
+      - --value
+  register: swimtrack_ai_linger
+  changed_when: false
+  check_mode: false
+
+- name: Assert the user service can survive logout
+  ansible.builtin.assert:
+    that:
+      - swimtrack_ai_linger.stdout | trim == "yes"
+    fail_msg: "An administrator must run: loginctl enable-linger {{ swimtrack_ai_remote_user }}"
+
+- name: Verify the user systemd manager is active
+  ansible.builtin.command:
+    argv:
+      - systemctl
+      - --user
+      - is-active
+      - default.target
+  environment: "{{ swimtrack_ai_systemd_environment }}"
+  register: swimtrack_ai_user_systemd
+  changed_when: false
+  check_mode: false
+
+- name: Inspect the remote Git worktree
+  ansible.builtin.command:
+    argv:
+      - git
+      - -C
+      - "{{ swimtrack_ai_repo_dir }}"
+      - status
+      - --porcelain
+  register: swimtrack_ai_git_status
+  changed_when: false
+  check_mode: false
+
+- name: Refuse to overwrite remote Git changes
+  ansible.builtin.assert:
+    that:
+      - swimtrack_ai_git_status.stdout | trim == ""
+    fail_msg: "The remote checkout has local changes. Preserve or commit them before deployment."
+
+- name: Report validated GPU host
+  ansible.builtin.debug:
+    msg:
+      - "GPU: {{ swimtrack_ai_gpu.stdout }}"
+      - "glibc: {{ swimtrack_ai_glibc.stdout }}"
+      - "Remote checkout: {{ swimtrack_ai_repo_dir }}"

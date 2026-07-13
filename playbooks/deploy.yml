@@ -1,0 +1,7 @@
+---
+- name: Deploy the SwimTrack GPU inference service
+  hosts: gpu_hosts
+  gather_facts: true
+  any_errors_fatal: true
+  roles:
+    - role: swimtrack_ai

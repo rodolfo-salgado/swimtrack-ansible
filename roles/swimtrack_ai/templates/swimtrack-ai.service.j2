@@ -1,0 +1,20 @@
+[Unit]
+Description=SwimTrack RT-DETRv2 and ByteTrack inference service
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory={{ swimtrack_ai_repo_dir }}
+EnvironmentFile={{ swimtrack_ai_environment_file }}
+Environment=PYTHONUNBUFFERED=1
+Environment=PYTHONDONTWRITEBYTECODE=1
+ExecStart={{ swimtrack_ai_repo_dir }}/.venv/bin/python -m uvicorn swimtrack_ai.main:app --host {{ swimtrack_ai_bind_host }} --port {{ swimtrack_ai_port }} --workers 1
+Restart=on-failure
+RestartSec=5s
+TimeoutStopSec=30s
+KillSignal=SIGINT
+UMask=0077
+
+[Install]
+WantedBy=default.target

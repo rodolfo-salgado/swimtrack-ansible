@@ -1,0 +1,10 @@
+---
+- name: Smoke test the deployed TensorRT API
+  hosts: gpu_hosts
+  gather_facts: false
+  any_errors_fatal: true
+  tasks:
+    - name: Run an authenticated inference smoke test
+      ansible.builtin.include_role:
+        name: swimtrack_ai
+        tasks_from: smoke

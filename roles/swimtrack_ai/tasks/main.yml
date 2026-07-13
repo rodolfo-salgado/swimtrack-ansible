@@ -1,0 +1,242 @@
+---
+- name: Run deployment preflight
+  ansible.builtin.import_tasks: preflight.yml
+
+- name: Read the current application revision
+  ansible.builtin.command:
+    argv:
+      - git
+      - -C
+      - "{{ swimtrack_ai_repo_dir }}"
+      - rev-parse
+      - HEAD
+  register: swimtrack_ai_current_revision
+  changed_when: false
+  check_mode: false
+
+- name: Read the existing origin URL
+  ansible.builtin.command:
+    argv:
+      - git
+      - -C
+      - "{{ swimtrack_ai_repo_dir }}"
+      - remote
+      - get-url
+      - origin
+  register: swimtrack_ai_origin
+  changed_when: false
+  no_log: true
+  check_mode: false
+  when: swimtrack_ai_current_revision.stdout | trim != swimtrack_ai_revision
+
+- name: Check out the configured application revision
+  ansible.builtin.git:
+    repo: "{{ swimtrack_ai_origin.stdout }}"
+    dest: "{{ swimtrack_ai_repo_dir }}"
+    version: "{{ swimtrack_ai_revision }}"
+    update: true
+    recursive: true
+    track_submodules: false
+    force: false
+  when: swimtrack_ai_current_revision.stdout | trim != swimtrack_ai_revision
+  notify: Restart SwimTrack AI
+
+- name: Inspect submodule initialization
+  ansible.builtin.command:
+    argv:
+      - git
+      - -C
+      - "{{ swimtrack_ai_repo_dir }}"
+      - submodule
+      - status
+      - --recursive
+  register: swimtrack_ai_submodule_status
+  changed_when: false
+  check_mode: false
+
+- name: Initialize pinned application submodules
+  ansible.builtin.command:
+    argv:
+      - git
+      - -C
+      - "{{ swimtrack_ai_repo_dir }}"
+      - submodule
+      - update
+      - --init
+      - --recursive
+  when: swimtrack_ai_submodule_status.stdout is ansible.builtin.search('(?m)^-')
+  changed_when: true
+  notify: Restart SwimTrack AI
+
+- name: Create remote application directories
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: directory
+    mode: "{{ item.mode }}"
+  loop:
+    - path: "{{ swimtrack_ai_model_dir }}"
+      mode: "0755"
+    - path: "{{ swimtrack_ai_cache_dir }}"
+      mode: "0755"
+    - path: "{{ swimtrack_ai_config_dir }}"
+      mode: "0700"
+    - path: "{{ swimtrack_ai_systemd_dir }}"
+      mode: "0755"
+
+- name: Copy model artifacts to the GPU host
+  ansible.builtin.copy:
+    src: "{{ swimtrack_ai_local_model_dir }}/{{ item }}"
+    dest: "{{ swimtrack_ai_model_dir }}/{{ item }}"
+    mode: "0644"
+  loop:
+    - "{{ swimtrack_ai_onnx_filename }}"
+    - "{{ swimtrack_ai_onnx_filename }}.data"
+  notify: Restart SwimTrack AI
+
+- name: Inspect the remote lock file
+  ansible.builtin.stat:
+    path: "{{ swimtrack_ai_repo_dir }}/uv.lock"
+    checksum_algorithm: sha256
+  register: swimtrack_ai_lock
+
+- name: Inspect the uv sync marker
+  ansible.builtin.stat:
+    path: "{{ swimtrack_ai_sync_marker }}"
+  register: swimtrack_ai_sync_marker_stat
+
+- name: Read the uv sync marker
+  ansible.builtin.slurp:
+    src: "{{ swimtrack_ai_sync_marker }}"
+  register: swimtrack_ai_sync_marker_content
+  when: swimtrack_ai_sync_marker_stat.stat.exists
+
+- name: Inspect the production virtual environment
+  ansible.builtin.stat:
+    path: "{{ swimtrack_ai_repo_dir }}/.venv/bin/uvicorn"
+  register: swimtrack_ai_venv
+
+- name: Decide whether dependencies need synchronization
+  ansible.builtin.set_fact:
+    swimtrack_ai_needs_sync: >-
+      {{
+        not swimtrack_ai_venv.stat.exists
+        or not swimtrack_ai_sync_marker_stat.stat.exists
+        or (swimtrack_ai_sync_marker_content.content | default('') | b64decode | trim) != swimtrack_ai_lock.stat.checksum
+      }}
+
+- name: Synchronize the native GPU environment
+  ansible.builtin.command:
+    argv:
+      - "{{ swimtrack_ai_uv_path }}"
+      - sync
+      - --python
+      - "{{ swimtrack_ai_python_path }}"
+      - --locked
+      - --no-dev
+      - --extra
+      - native-gpu
+    chdir: "{{ swimtrack_ai_repo_dir }}"
+  environment:
+    CUDA_VISIBLE_DEVICES: "{{ swimtrack_ai_gpu_index | string }}"
+  when: swimtrack_ai_needs_sync
+  changed_when: true
+  notify: Restart SwimTrack AI
+
+- name: Record the synchronized lock checksum
+  ansible.builtin.copy:
+    content: "{{ swimtrack_ai_lock.stat.checksum }}\n"
+    dest: "{{ swimtrack_ai_sync_marker }}"
+    mode: "0644"
+  when: swimtrack_ai_needs_sync
+
+- name: Create the local secret directory
+  ansible.builtin.file:
+    path: "{{ swimtrack_ai_local_secret_file | dirname }}"
+    state: directory
+    mode: "0700"
+  delegate_to: localhost
+  run_once: true
+
+- name: Load or generate the shared authentication token
+  ansible.builtin.set_fact:
+    swimtrack_ai_auth_token: "{{ lookup('ansible.builtin.password', swimtrack_ai_local_secret_file, length=48, chars=['ascii_letters', 'digits']) }}"
+  no_log: true
+
+- name: Protect the local authentication token
+  ansible.builtin.file:
+    path: "{{ swimtrack_ai_local_secret_file }}"
+    mode: "0600"
+  delegate_to: localhost
+  run_once: true
+  no_log: true
+
+- name: Install the private service environment
+  ansible.builtin.template:
+    src: swimtrack-ai.env.j2
+    dest: "{{ swimtrack_ai_environment_file }}"
+    mode: "0600"
+  no_log: true
+  notify: Restart SwimTrack AI
+
+- name: Install the user service unit
+  ansible.builtin.template:
+    src: swimtrack-ai.service.j2
+    dest: "{{ swimtrack_ai_systemd_dir }}/{{ swimtrack_ai_service_name }}"
+    mode: "0644"
+  notify: Restart SwimTrack AI
+
+- name: Apply pending service restarts
+  ansible.builtin.meta: flush_handlers
+
+- name: Ensure the user service is enabled and running
+  ansible.builtin.systemd_service:
+    name: "{{ swimtrack_ai_service_name }}"
+    scope: user
+    daemon_reload: true
+    enabled: true
+    state: started
+  environment: "{{ swimtrack_ai_systemd_environment }}"
+
+- name: Wait for TensorRT and the API to become ready
+  block:
+    - name: Poll the local readiness endpoint
+      ansible.builtin.uri:
+        url: "http://{{ swimtrack_ai_bind_host }}:{{ swimtrack_ai_port }}/readyz"
+        method: GET
+        status_code: 200
+        return_content: true
+      register: swimtrack_ai_ready
+      until: swimtrack_ai_ready.status | default(0) == 200
+      retries: "{{ swimtrack_ai_ready_retries }}"
+      delay: "{{ swimtrack_ai_ready_delay_seconds }}"
+      check_mode: false
+  rescue:
+    - name: Read recent service logs
+      ansible.builtin.command:
+        argv:
+          - journalctl
+          - --user
+          - --unit
+          - "{{ swimtrack_ai_service_name }}"
+          - --lines
+          - "100"
+          - --no-pager
+      environment: "{{ swimtrack_ai_systemd_environment }}"
+      register: swimtrack_ai_journal
+      changed_when: false
+      failed_when: false
+      check_mode: false
+
+    - name: Report recent service logs
+      ansible.builtin.debug:
+        var: swimtrack_ai_journal.stdout_lines
+
+    - name: Stop after readiness failure
+      ansible.builtin.fail:
+        msg: "SwimTrack AI did not become ready on {{ swimtrack_ai_bind_host }}:{{ swimtrack_ai_port }}."
+
+- name: Report successful deployment
+  ansible.builtin.debug:
+    msg:
+      - "SwimTrack AI is ready on the GPU host at http://{{ swimtrack_ai_bind_host }}:{{ swimtrack_ai_port }}."
+      - "The API remains bound to loopback and must be reached through the documented SSH tunnel."

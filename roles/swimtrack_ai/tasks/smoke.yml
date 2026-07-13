@@ -1,0 +1,98 @@
+---
+- name: Load the shared authentication token
+  ansible.builtin.set_fact:
+    swimtrack_ai_auth_token: "{{ lookup('ansible.builtin.password', swimtrack_ai_local_secret_file, length=48, chars=['ascii_letters', 'digits']) }}"
+  no_log: true
+
+- name: Verify the deployed API is ready
+  ansible.builtin.uri:
+    url: "http://{{ swimtrack_ai_bind_host }}:{{ swimtrack_ai_port }}/readyz"
+    method: GET
+    status_code: 200
+
+- name: Exercise one real TensorRT inference
+  block:
+    - name: Generate a synthetic JPEG frame
+      ansible.builtin.command:
+        argv:
+          - "{{ swimtrack_ai_repo_dir }}/.venv/bin/python"
+          - -c
+          - "import cv2, numpy as np; image = np.zeros((640, 640, 3), dtype=np.uint8); cv2.circle(image, (320, 110), 55, (255, 255, 255), -1); cv2.rectangle(image, (250, 160), (390, 570), (255, 255, 255), -1); assert cv2.imwrite('/tmp/swimtrack-ai-smoke.jpg', image)"
+      changed_when: true
+
+    - name: Create a temporary tracking session
+      ansible.builtin.uri:
+        url: "http://{{ swimtrack_ai_bind_host }}:{{ swimtrack_ai_port }}/v1/tracking-sessions"
+        method: POST
+        headers:
+          X-Swimtrack-Auth: "{{ swimtrack_ai_auth_token }}"
+        body_format: json
+        body:
+          fps: 30.0
+        status_code: 201
+        return_content: true
+      register: swimtrack_smoke_session
+      no_log: true
+
+    - name: Submit one frame for inference and tracking
+      ansible.builtin.uri:
+        url: "http://{{ swimtrack_ai_bind_host }}:{{ swimtrack_ai_port }}/v1/tracking-sessions/{{ swimtrack_smoke_session.json.session_id }}/batches"
+        method: POST
+        headers:
+          X-Swimtrack-Auth: "{{ swimtrack_ai_auth_token }}"
+        body_format: form-multipart
+        remote_src: true
+        body:
+          frames:
+            filename: /tmp/swimtrack-ai-smoke.jpg
+            mime_type: image/jpeg
+            multipart_encoding: 7or8bit
+          metadata: "{{ {'batch_id': 'ansible-smoke-0', 'sequence': 0, 'frames': [{'frame_index': 0, 'time_ms': 0.0, 'original_width': 640, 'original_height': 640}]} | to_json }}"
+        status_code:
+          - 200
+          - 422
+        return_content: true
+      register: swimtrack_smoke_batch
+      no_log: true
+
+    - name: Report a sanitized validation error
+      ansible.builtin.debug:
+        var: swimtrack_smoke_batch.json
+      when: swimtrack_smoke_batch.status != 200
+
+    - name: Require a successful batch request
+      ansible.builtin.assert:
+        that:
+          - swimtrack_smoke_batch.status == 200
+        fail_msg: "The batch request failed validation; see the sanitized response above."
+
+    - name: Validate the batch response contract
+      ansible.builtin.assert:
+        that:
+          - swimtrack_smoke_batch.json.sequence == 0
+          - swimtrack_smoke_batch.json.next_sequence == 1
+          - swimtrack_smoke_batch.json.frames | length == 1
+          - swimtrack_smoke_batch.json.frames[0].frame_index == 0
+          - swimtrack_smoke_batch.json.frames[0].width == 640
+          - swimtrack_smoke_batch.json.frames[0].height == 640
+          - swimtrack_smoke_batch.json.frames[0].boxes is sequence
+        fail_msg: "The deployed service returned an invalid batch response."
+
+    - name: Report smoke test result
+      ansible.builtin.debug:
+        msg: "TensorRT processed one frame and returned {{ swimtrack_smoke_batch.json.frames[0].boxes | length }} bbox(es)."
+  always:
+    - name: Close the temporary tracking session
+      ansible.builtin.uri:
+        url: "http://{{ swimtrack_ai_bind_host }}:{{ swimtrack_ai_port }}/v1/tracking-sessions/{{ swimtrack_smoke_session.json.session_id }}"
+        method: DELETE
+        headers:
+          X-Swimtrack-Auth: "{{ swimtrack_ai_auth_token }}"
+        status_code: 204
+      when: swimtrack_smoke_session is defined and swimtrack_smoke_session.json.session_id is defined
+      no_log: true
+
+    - name: Remove the synthetic frame
+      ansible.builtin.file:
+        path: /tmp/swimtrack-ai-smoke.jpg
+        state: absent
