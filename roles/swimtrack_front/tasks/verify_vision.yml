@@ -1,0 +1,34 @@
+---
+- name: Verify direct AI connectivity from the Front host
+  block:
+    - name: Request the AI readiness endpoint from the Front host
+      ansible.builtin.uri:
+        url: "{{ swimtrack_front_vision_base_url | regex_replace('/+$', '') }}/readyz"
+        method: GET
+        status_code: 200
+        return_content: false
+
+    - name: Create an authenticated AI tracking session from the Front host
+      ansible.builtin.uri:
+        url: "{{ swimtrack_front_vision_base_url | regex_replace('/+$', '') }}/v1/tracking-sessions"
+        method: POST
+        headers:
+          X-Swimtrack-Auth: "{{ swimtrack_front_vision_auth_token }}"
+        body_format: json
+        body:
+          fps: 30.0
+        status_code: 201
+        return_content: true
+      register: swimtrack_front_vision_session
+      no_log: true
+  always:
+    - name: Close the Front connectivity test session
+      ansible.builtin.uri:
+        url: "{{ swimtrack_front_vision_base_url | regex_replace('/+$', '') }}/v1/tracking-sessions/{{ swimtrack_front_vision_session.json.session_id }}"
+        method: DELETE
+        headers:
+          X-Swimtrack-Auth: "{{ swimtrack_front_vision_auth_token }}"
+        status_code: 204
+      when: swimtrack_front_vision_session is defined and swimtrack_front_vision_session.json.session_id is defined
+      no_log: true
+  when: swimtrack_front_verify_vision_api | bool

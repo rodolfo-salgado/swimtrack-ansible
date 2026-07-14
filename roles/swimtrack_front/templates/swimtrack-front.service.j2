@@ -1,0 +1,20 @@
+[Unit]
+Description=SwimTrack Flask front-end and BFF
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory={{ swimtrack_front_repo_dir }}
+EnvironmentFile={{ swimtrack_front_environment_file }}
+Environment=PYTHONUNBUFFERED=1
+Environment=PYTHONDONTWRITEBYTECODE=1
+ExecStart={{ swimtrack_front_repo_dir }}/.venv/bin/python -m gunicorn -c gunicorn.conf.py app:app
+Restart=on-failure
+RestartSec=5s
+TimeoutStopSec=30s
+KillSignal=SIGINT
+UMask=0077
+
+[Install]
+WantedBy=default.target

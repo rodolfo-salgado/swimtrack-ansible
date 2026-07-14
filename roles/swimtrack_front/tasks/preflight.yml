@@ -1,0 +1,6 @@
+---
+- name: Run front host preflight
+  ansible.builtin.import_tasks: preflight_host.yml
+
+- name: Run front application preflight
+  ansible.builtin.import_tasks: preflight_app.yml

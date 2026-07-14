@@ -7,6 +7,15 @@
       - ansible_facts['architecture'] == "x86_64"
     fail_msg: "The target must be Linux x86_64 and the effective remote user must be {{ swimtrack_ai_remote_user }}."
 
+- name: Validate the AI network configuration
+  ansible.builtin.assert:
+    that:
+      - swimtrack_ai_network_mode in ['loopback', 'direct']
+      - swimtrack_ai_network_mode != 'loopback' or swimtrack_ai_bind_host == '127.0.0.1'
+      - swimtrack_ai_network_mode != 'direct' or swimtrack_ai_bind_host in ansible_facts['all_ipv4_addresses']
+      - swimtrack_ai_network_mode != 'direct' or ((swimtrack_ai_port | int) >= 7000 and (swimtrack_ai_port | int) <= 7099)
+    fail_msg: "Direct mode requires a local GPU-host IPv4 address and a port in 7000-7099."
+
 - name: Inspect required remote paths
   ansible.builtin.stat:
     path: "{{ item }}"

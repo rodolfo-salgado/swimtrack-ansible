@@ -1,0 +1,7 @@
+---
+- name: Deploy the SwimTrack front application
+  hosts: front_hosts
+  gather_facts: true
+  any_errors_fatal: true
+  roles:
+    - role: swimtrack_front

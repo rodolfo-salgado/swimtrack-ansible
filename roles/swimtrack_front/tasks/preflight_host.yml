@@ -1,0 +1,75 @@
+---
+- name: Validate the remote identity and platform
+  ansible.builtin.assert:
+    that:
+      - ansible_facts['user_id'] == swimtrack_front_remote_user
+      - ansible_facts['system'] == "Linux"
+      - ansible_facts['architecture'] == "x86_64"
+    fail_msg: "The target must be Linux x86_64 and the effective remote user must be {{ swimtrack_front_remote_user }}."
+
+- name: Inspect required host paths
+  ansible.builtin.stat:
+    path: "{{ item }}"
+  loop:
+    - "{{ swimtrack_front_uv_path }}"
+    - "{{ swimtrack_front_python_path }}"
+    - "/run/user/{{ ansible_facts['user_uid'] }}/bus"
+  register: swimtrack_front_host_paths
+
+- name: Assert required host paths exist
+  ansible.builtin.assert:
+    that:
+      - swimtrack_front_host_paths.results | map(attribute='stat.exists') | min
+    fail_msg: "The remote uv installation, Python 3.12, or the user systemd bus is missing."
+
+- name: Check that Git is available
+  ansible.builtin.command:
+    argv:
+      - git
+      - --version
+  changed_when: false
+
+- name: Check free space on the remote home filesystem
+  ansible.builtin.command:
+    argv:
+      - df
+      - -Pk
+      - "{{ swimtrack_front_remote_home }}"
+  register: swimtrack_front_disk
+  changed_when: false
+  check_mode: false
+
+- name: Require at least one GiB of free space
+  ansible.builtin.assert:
+    that:
+      - swimtrack_front_disk.stdout_lines[-1].split()[3] | int >= swimtrack_front_minimum_free_kib | int
+    fail_msg: "At least one GiB free is required for the front virtual environment and uploads."
+
+- name: Verify user lingering is enabled
+  ansible.builtin.command:
+    argv:
+      - loginctl
+      - show-user
+      - "{{ swimtrack_front_remote_user }}"
+      - --property=Linger
+      - --value
+  register: swimtrack_front_linger
+  changed_when: false
+  check_mode: false
+
+- name: Assert the user service can survive logout
+  ansible.builtin.assert:
+    that:
+      - swimtrack_front_linger.stdout | trim == "yes"
+    fail_msg: "An administrator must run: loginctl enable-linger {{ swimtrack_front_remote_user }}"
+
+- name: Verify the user systemd manager is active
+  ansible.builtin.command:
+    argv:
+      - systemctl
+      - --user
+      - is-active
+      - default.target
+  environment: "{{ swimtrack_front_systemd_environment }}"
+  changed_when: false
+  check_mode: false

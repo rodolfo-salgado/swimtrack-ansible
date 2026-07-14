@@ -1,0 +1,31 @@
+---
+- name: Verify the deployed front root page
+  ansible.builtin.uri:
+    url: "http://{{ swimtrack_front_bind_host }}:{{ swimtrack_front_port }}{{ swimtrack_front_url_prefix }}"
+    method: GET
+    status_code: 200
+
+- name: Verify the front static stylesheet
+  ansible.builtin.uri:
+    url: "http://{{ swimtrack_front_bind_host }}:{{ swimtrack_front_port }}{{ swimtrack_front_url_prefix }}static/css/theme.css"
+    method: GET
+    status_code: 200
+
+- name: Verify detect rejects a request without a video before contacting AI
+  ansible.builtin.uri:
+    url: "http://{{ swimtrack_front_bind_host }}:{{ swimtrack_front_port }}{{ swimtrack_front_url_prefix }}api/detect"
+    method: POST
+    status_code: 400
+    return_content: true
+  register: swimtrack_front_detect_without_video
+
+- name: Validate the no-video response
+  ansible.builtin.assert:
+    that:
+      - swimtrack_front_detect_without_video.json.ok is false
+
+- name: Load the private AI credentials for the Front smoke test
+  ansible.builtin.import_tasks: vision_credentials.yml
+
+- name: Verify the configured AI connection from the Front smoke test
+  ansible.builtin.import_tasks: verify_vision.yml

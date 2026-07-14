@@ -1,0 +1,47 @@
+---
+swimtrack_front_revision: main
+swimtrack_front_remote_user: grupo1
+swimtrack_front_remote_home: "/home/{{ swimtrack_front_remote_user }}"
+swimtrack_front_repo_dir: "{{ swimtrack_front_remote_home }}/swimtrack/swimtrack-front"
+swimtrack_front_repository: ""
+swimtrack_front_uv_path: "{{ swimtrack_front_remote_home }}/.local/bin/uv"
+swimtrack_front_python_path: /usr/bin/python3.12
+swimtrack_front_config_dir: "{{ swimtrack_front_remote_home }}/.config/swimtrack-front"
+swimtrack_front_environment_file: "{{ swimtrack_front_config_dir }}/swimtrack-front.env"
+swimtrack_front_systemd_dir: "{{ swimtrack_front_remote_home }}/.config/systemd/user"
+swimtrack_front_service_name: swimtrack-front.service
+swimtrack_front_requirements_marker: "{{ swimtrack_front_repo_dir }}/.venv/.swimtrack-requirements.sha256"
+swimtrack_front_local_secret_file: "{{ lookup('ansible.builtin.env', 'HOME') }}/.ansible/swimtrack-front/flask_secret_key"
+
+swimtrack_front_bind_host: 127.0.0.1
+swimtrack_front_port: 7001
+swimtrack_front_url_prefix: /swimtrack/
+swimtrack_front_vision_base_url: http://127.0.0.1:8001
+swimtrack_front_vision_auth_token: ""
+swimtrack_front_vision_lap_calibration_id: fixed-camera-v1
+swimtrack_front_vision_auth_token_file: "{{ lookup('ansible.builtin.env', 'HOME') }}/.ansible/swimtrack-ai/auth_token"
+swimtrack_front_require_vision_auth_token: false
+swimtrack_front_verify_vision_api: false
+swimtrack_front_minimum_free_kib: 1048576
+
+swimtrack_front_apache_site_path: /etc/apache2/sites-available/000-default.conf
+swimtrack_front_apache_public_url: "http://127.0.0.1{{ swimtrack_front_url_prefix }}"
+swimtrack_front_apache_proxy_target: "http://{{ swimtrack_front_bind_host }}:{{ swimtrack_front_port }}{{ swimtrack_front_url_prefix }}"
+swimtrack_front_apache_connection_timeout_seconds: 5
+swimtrack_front_apache_timeout_seconds: 600
+
+swimtrack_front_e2e_source_video: "{{ playbook_dir }}/../../input_vids/20260513_201705_test01.mp4"
+swimtrack_front_e2e_source_sha256: c981fbadc43d11999ea63804699dc6edcc3ee4a9d9bd1d33ab73afe7a2457f1d
+swimtrack_front_e2e_start_seconds: 0
+swimtrack_front_e2e_duration_seconds: 2
+swimtrack_front_e2e_fixture_fps: 10
+swimtrack_front_e2e_expected_frame_count: 20
+swimtrack_front_e2e_timeout_seconds: 600
+swimtrack_front_e2e_time_tolerance_seconds: 0.02
+swimtrack_front_e2e_temp_dir: /tmp
+swimtrack_front_e2e_public_endpoint: "{{ swimtrack_front_apache_public_url | regex_replace('/+$', '') }}/api/detect"
+swimtrack_front_e2e_validator_local_path: "{{ playbook_dir }}/../scripts/validate_sse_e2e.py"
+
+swimtrack_front_systemd_environment:
+  XDG_RUNTIME_DIR: "/run/user/{{ ansible_facts['user_uid'] }}"
+  DBUS_SESSION_BUS_ADDRESS: "unix:path=/run/user/{{ ansible_facts['user_uid'] }}/bus"

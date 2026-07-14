@@ -1,0 +1,54 @@
+---
+- name: Inspect the configured Apache site
+  ansible.builtin.stat:
+    path: "{{ swimtrack_front_apache_site_path }}"
+  register: swimtrack_front_apache_site_stat
+
+- name: Require the configured Apache site
+  ansible.builtin.assert:
+    that:
+      - swimtrack_front_apache_site_stat.stat.exists
+      - swimtrack_front_apache_site_stat.stat.isreg
+    fail_msg: "Expected the active Apache site at {{ swimtrack_front_apache_site_path }}. Refusing to create a second proxy configuration."
+
+- name: Read the configured Apache site
+  ansible.builtin.slurp:
+    src: "{{ swimtrack_front_apache_site_path }}"
+  register: swimtrack_front_apache_site
+
+- name: Decode the configured Apache site
+  ansible.builtin.set_fact:
+    swimtrack_front_apache_site_text: "{{ swimtrack_front_apache_site.content | b64decode }}"
+
+- name: Require exactly one existing SwimTrack ProxyPass mapping
+  ansible.builtin.assert:
+    that:
+      - (swimtrack_front_apache_site_text | regex_findall('(?m)^\\s*ProxyPass\\s+/swimtrack/\\s+\\S+.*$') | length) == 1
+      - (swimtrack_front_apache_site_text | regex_findall('(?m)^\\s*ProxyPassReverse\\s+/swimtrack/\\s+\\S+.*$') | length) == 1
+    fail_msg: "Expected exactly one existing ProxyPass and ProxyPassReverse mapping for /swimtrack/ in {{ swimtrack_front_apache_site_path }}. Refusing to add duplicate mappings."
+
+- name: Point the SwimTrack Apache proxy at Gunicorn
+  ansible.builtin.replace:
+    path: "{{ swimtrack_front_apache_site_path }}"
+    regexp: '(?m)^\s*ProxyPass\s+/swimtrack/\s+.*$'
+    replace: "ProxyPass        {{ swimtrack_front_url_prefix }}  {{ swimtrack_front_apache_proxy_target }} connectiontimeout={{ swimtrack_front_apache_connection_timeout_seconds }} timeout={{ swimtrack_front_apache_timeout_seconds }}"
+    backup: true
+  notify: Validate and reload the SwimTrack Apache proxy
+
+- name: Preserve the SwimTrack prefix when Apache rewrites redirects
+  ansible.builtin.replace:
+    path: "{{ swimtrack_front_apache_site_path }}"
+    regexp: '(?m)^\s*ProxyPassReverse\s+/swimtrack/\s+.*$'
+    replace: "ProxyPassReverse {{ swimtrack_front_url_prefix }} {{ swimtrack_front_apache_proxy_target }}"
+    backup: true
+  notify: Validate and reload the SwimTrack Apache proxy
+
+- name: Apply any pending Apache proxy changes
+  ansible.builtin.meta: flush_handlers
+
+- name: Verify the published SwimTrack front root page through Apache
+  ansible.builtin.uri:
+    url: "{{ swimtrack_front_apache_public_url }}"
+    method: GET
+    status_code: 200
+    use_proxy: false

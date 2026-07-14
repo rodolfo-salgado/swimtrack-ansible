@@ -1,0 +1,251 @@
+---
+- name: Run the public video E2E test
+  block:
+    - name: Verify the controller source video
+      ansible.builtin.stat:
+        path: "{{ swimtrack_front_e2e_source_video }}"
+        checksum_algorithm: sha256
+      register: swimtrack_front_e2e_source_stat
+      delegate_to: localhost
+      run_once: true
+
+    - name: Require the expected immutable source video
+      ansible.builtin.assert:
+        that:
+          - swimtrack_front_e2e_source_stat.stat.exists
+          - swimtrack_front_e2e_source_stat.stat.isreg
+          - swimtrack_front_e2e_source_stat.stat.checksum == swimtrack_front_e2e_source_sha256
+        fail_msg: "The E2E source video is missing or does not match its recorded SHA-256."
+      run_once: true
+
+    - name: Verify the controller video tools
+      ansible.builtin.command:
+        argv:
+          - "{{ item }}"
+          - -version
+      loop:
+        - ffmpeg
+        - ffprobe
+      delegate_to: localhost
+      run_once: true
+      changed_when: false
+
+    - name: Create a temporary controller fixture path
+      ansible.builtin.tempfile:
+        state: file
+        path: "{{ swimtrack_front_e2e_temp_dir }}"
+        suffix: .mp4
+      register: swimtrack_front_e2e_fixture
+      delegate_to: localhost
+      run_once: true
+
+    - name: Build the short deterministic video fixture
+      ansible.builtin.command:
+        argv:
+          - ffmpeg
+          - -hide_banner
+          - -loglevel
+          - error
+          - -y
+          - -ss
+          - "{{ swimtrack_front_e2e_start_seconds | string }}"
+          - -t
+          - "{{ swimtrack_front_e2e_duration_seconds | string }}"
+          - -i
+          - "{{ swimtrack_front_e2e_source_video }}"
+          - -vf
+          - "fps={{ swimtrack_front_e2e_fixture_fps }}"
+          - -r
+          - "{{ swimtrack_front_e2e_fixture_fps | string }}"
+          - -fps_mode
+          - cfr
+          - -an
+          - -c:v
+          - libx264
+          - -preset
+          - veryfast
+          - -crf
+          - "28"
+          - -movflags
+          - +faststart
+          - -video_track_timescale
+          - "{{ swimtrack_front_e2e_fixture_fps | string }}"
+          - "{{ swimtrack_front_e2e_fixture.path }}"
+      delegate_to: localhost
+      run_once: true
+      changed_when: true
+
+    - name: Inspect the generated fixture
+      ansible.builtin.command:
+        argv:
+          - ffprobe
+          - -v
+          - error
+          - -select_streams
+          - v:0
+          - -count_frames
+          - -show_entries
+          - stream=width,height,nb_read_frames,avg_frame_rate,time_base
+          - -of
+          - json
+          - "{{ swimtrack_front_e2e_fixture.path }}"
+      register: swimtrack_front_e2e_fixture_probe
+      delegate_to: localhost
+      run_once: true
+      changed_when: false
+
+    - name: Parse the generated fixture metadata
+      ansible.builtin.set_fact:
+        swimtrack_front_e2e_fixture_metadata: "{{ (swimtrack_front_e2e_fixture_probe.stdout | from_json).streams[0] }}"
+
+    - name: Require the expected short fixture shape
+      ansible.builtin.assert:
+        that:
+          - swimtrack_front_e2e_fixture_metadata.width | int > 0
+          - swimtrack_front_e2e_fixture_metadata.height | int > 0
+          - swimtrack_front_e2e_fixture_metadata.nb_read_frames | int == swimtrack_front_e2e_expected_frame_count | int
+          - >-
+            swimtrack_front_e2e_fixture_metadata.avg_frame_rate == (swimtrack_front_e2e_fixture_fps | string ~ '/1')
+          - >-
+            swimtrack_front_e2e_fixture_metadata.time_base == ('1/' ~ (swimtrack_front_e2e_fixture_fps | string))
+        fail_msg: "The generated E2E fixture does not have the expected frame shape or timing."
+
+    - name: Create a temporary fixture path on the Front host
+      ansible.builtin.tempfile:
+        state: file
+        path: "{{ swimtrack_front_e2e_temp_dir }}"
+        suffix: .mp4
+      register: swimtrack_front_e2e_remote_fixture
+
+    - name: Create a temporary SSE response path on the Front host
+      ansible.builtin.tempfile:
+        state: file
+        path: "{{ swimtrack_front_e2e_temp_dir }}"
+        suffix: .sse
+      register: swimtrack_front_e2e_remote_stream
+
+    - name: Create a temporary validator path on the Front host
+      ansible.builtin.tempfile:
+        state: file
+        path: "{{ swimtrack_front_e2e_temp_dir }}"
+        suffix: .py
+      register: swimtrack_front_e2e_remote_validator
+
+    - name: Copy the generated fixture to the Front host
+      ansible.builtin.copy:
+        src: "{{ swimtrack_front_e2e_fixture.path }}"
+        dest: "{{ swimtrack_front_e2e_remote_fixture.path }}"
+        mode: "0600"
+
+    - name: Copy the SSE validator to the Front host
+      ansible.builtin.copy:
+        src: "{{ swimtrack_front_e2e_validator_local_path }}"
+        dest: "{{ swimtrack_front_e2e_remote_validator.path }}"
+        mode: "0700"
+
+    - name: Upload the fixture through the published Apache endpoint
+      ansible.builtin.command:
+        argv:
+          - curl
+          - --silent
+          - --show-error
+          - --fail-with-body
+          - --no-buffer
+          - --max-time
+          - "{{ swimtrack_front_e2e_timeout_seconds | string }}"
+          - --header
+          - "Accept: text/event-stream"
+          - --form
+          - "video=@{{ swimtrack_front_e2e_remote_fixture.path }};type=video/mp4"
+          - --output
+          - "{{ swimtrack_front_e2e_remote_stream.path }}"
+          - --write-out
+          - '%{response_code} %{content_type}\n'
+          - "{{ swimtrack_front_e2e_public_endpoint }}"
+      register: swimtrack_front_e2e_curl
+      changed_when: false
+
+    - name: Validate the published response headers
+      ansible.builtin.assert:
+        that:
+          - swimtrack_front_e2e_curl.stdout is match('^200\\s+text/event-stream')
+        fail_msg: "The published detection endpoint did not return a successful SSE response."
+
+    - name: Validate the full SSE contract
+      ansible.builtin.command:
+        argv:
+          - "{{ swimtrack_front_uv_path }}"
+          - run
+          - --script
+          - "{{ swimtrack_front_e2e_remote_validator.path }}"
+          - --stream
+          - "{{ swimtrack_front_e2e_remote_stream.path }}"
+          - --expected-events
+          - "{{ swimtrack_front_e2e_fixture_metadata.nb_read_frames | string }}"
+          - --width
+          - "{{ swimtrack_front_e2e_fixture_metadata.width | string }}"
+          - --height
+          - "{{ swimtrack_front_e2e_fixture_metadata.height | string }}"
+          - --fps
+          - "{{ swimtrack_front_e2e_fixture_fps | string }}"
+          - --time-tolerance
+          - "{{ swimtrack_front_e2e_time_tolerance_seconds | string }}"
+      register: swimtrack_front_e2e_validation
+      changed_when: false
+
+    - name: Record the E2E contract summary
+      ansible.builtin.set_fact:
+        swimtrack_front_e2e_summary: "{{ swimtrack_front_e2e_validation.stdout | from_json }}"
+
+    - name: Report the E2E contract summary
+      ansible.builtin.debug:
+        msg: "{{ swimtrack_front_e2e_summary | to_nice_json }}"
+  rescue:
+    - name: Collect recent Front service logs after E2E failure
+      ansible.builtin.command:
+        argv:
+          - journalctl
+          - --user
+          - --unit
+          - "{{ swimtrack_front_service_name }}"
+          - --lines
+          - "100"
+          - --no-pager
+      environment: "{{ swimtrack_front_systemd_environment }}"
+      register: swimtrack_front_e2e_journal
+      changed_when: false
+      failed_when: false
+
+    - name: Report recent Front service logs after E2E failure
+      ansible.builtin.debug:
+        var: swimtrack_front_e2e_journal.stdout_lines
+
+    - name: Stop after E2E failure
+      ansible.builtin.fail:
+        msg: "The published Front to AI E2E test failed."
+  always:
+    - name: Remove the temporary fixture from the Front host
+      ansible.builtin.file:
+        path: "{{ swimtrack_front_e2e_remote_fixture.path }}"
+        state: absent
+      when: swimtrack_front_e2e_remote_fixture is defined
+
+    - name: Remove the temporary SSE response from the Front host
+      ansible.builtin.file:
+        path: "{{ swimtrack_front_e2e_remote_stream.path }}"
+        state: absent
+      when: swimtrack_front_e2e_remote_stream is defined
+
+    - name: Remove the temporary validator from the Front host
+      ansible.builtin.file:
+        path: "{{ swimtrack_front_e2e_remote_validator.path }}"
+        state: absent
+      when: swimtrack_front_e2e_remote_validator is defined
+
+    - name: Remove the temporary fixture from the controller
+      ansible.builtin.file:
+        path: "{{ swimtrack_front_e2e_fixture.path }}"
+        state: absent
+      delegate_to: localhost
+      run_once: true
+      when: swimtrack_front_e2e_fixture is defined

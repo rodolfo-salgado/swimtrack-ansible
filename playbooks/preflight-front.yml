@@ -1,0 +1,10 @@
+---
+- name: Validate the SwimTrack front host
+  hosts: front_hosts
+  gather_facts: true
+  any_errors_fatal: true
+  tasks:
+    - name: Run the SwimTrack front preflight
+      ansible.builtin.include_role:
+        name: swimtrack_front
+        tasks_from: preflight

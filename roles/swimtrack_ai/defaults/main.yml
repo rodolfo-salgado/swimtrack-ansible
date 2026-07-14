@@ -18,6 +18,7 @@ swimtrack_ai_local_secret_file: "{{ lookup('ansible.builtin.env', 'HOME') }}/.an
 
 swimtrack_ai_onnx_filename: rtdetrv2_s.onnx
 swimtrack_ai_engine_filename: rtdetrv2_s_fp16.engine
+swimtrack_ai_network_mode: loopback
 swimtrack_ai_bind_host: 127.0.0.1
 swimtrack_ai_port: 8001
 swimtrack_ai_gpu_index: 0

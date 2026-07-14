@@ -2,3 +2,6 @@ swimtrack_ai_revision: d72e91cc2939c92a69ac5ff44a9036faff5836f0
 swimtrack_ai_remote_user: grupo1
 swimtrack_ai_remote_home: /home/grupo1
 swimtrack_ai_repo_dir: /home/grupo1/swimtrack/swimtrack-ai
+swimtrack_ai_network_mode: direct
+swimtrack_ai_bind_host: 10.0.218.101
+swimtrack_ai_port: 7001

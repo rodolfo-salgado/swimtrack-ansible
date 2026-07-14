@@ -239,4 +239,4 @@
   ansible.builtin.debug:
     msg:
       - "SwimTrack AI is ready on the GPU host at http://{{ swimtrack_ai_bind_host }}:{{ swimtrack_ai_port }}."
-      - "The API remains bound to loopback and must be reached through the documented SSH tunnel."
+      - "Network mode: {{ swimtrack_ai_network_mode }}."

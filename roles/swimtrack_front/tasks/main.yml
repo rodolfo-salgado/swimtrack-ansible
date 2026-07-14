@@ -1,0 +1,256 @@
+---
+- name: Run front host preflight
+  ansible.builtin.import_tasks: preflight_host.yml
+
+- name: Require a repository URL for an initial checkout
+  ansible.builtin.assert:
+    that:
+      - swimtrack_front_repository | length > 0
+    fail_msg: "swimtrack_front_repository must be set to deploy the front checkout."
+
+- name: Inspect the remote application directory
+  ansible.builtin.stat:
+    path: "{{ swimtrack_front_repo_dir }}"
+  register: swimtrack_front_repo_dir_stat
+
+- name: Inspect the remote Git metadata
+  ansible.builtin.stat:
+    path: "{{ swimtrack_front_repo_dir }}/.git"
+  register: swimtrack_front_git_dir_stat
+  when: swimtrack_front_repo_dir_stat.stat.exists
+
+- name: Refuse to overwrite a non-Git application directory
+  ansible.builtin.assert:
+    that:
+      - not swimtrack_front_repo_dir_stat.stat.exists or swimtrack_front_git_dir_stat.stat.exists
+    fail_msg: "{{ swimtrack_front_repo_dir }} exists but is not a Git checkout."
+
+- name: Create the remote application parent directory
+  ansible.builtin.file:
+    path: "{{ swimtrack_front_repo_dir | dirname }}"
+    state: directory
+    mode: "0755"
+
+- name: Clone the configured front revision
+  ansible.builtin.git:
+    repo: "{{ swimtrack_front_repository }}"
+    dest: "{{ swimtrack_front_repo_dir }}"
+    version: "{{ swimtrack_front_revision }}"
+    update: true
+    recursive: false
+    force: false
+  when: not swimtrack_front_repo_dir_stat.stat.exists
+  notify: Restart SwimTrack front
+
+- name: Run front application preflight
+  ansible.builtin.import_tasks: preflight_app.yml
+
+- name: Read the current application revision
+  ansible.builtin.command:
+    argv:
+      - git
+      - -C
+      - "{{ swimtrack_front_repo_dir }}"
+      - rev-parse
+      - HEAD
+  register: swimtrack_front_current_revision
+  changed_when: false
+  check_mode: false
+
+- name: Update the front checkout to the configured revision
+  ansible.builtin.git:
+    repo: "{{ swimtrack_front_repository }}"
+    dest: "{{ swimtrack_front_repo_dir }}"
+    version: "{{ swimtrack_front_revision }}"
+    update: true
+    recursive: false
+    force: false
+  when: swimtrack_front_current_revision.stdout | trim != swimtrack_front_revision
+  notify: Restart SwimTrack front
+
+- name: Inspect the requirements file
+  ansible.builtin.stat:
+    path: "{{ swimtrack_front_repo_dir }}/requirements.txt"
+    checksum_algorithm: sha256
+  register: swimtrack_front_requirements
+
+- name: Define the front dependency installation fingerprint
+  ansible.builtin.set_fact:
+    swimtrack_front_requirements_fingerprint: "install-v1:{{ swimtrack_front_requirements.stat.checksum }}"
+
+- name: Inspect the requirements synchronization marker
+  ansible.builtin.stat:
+    path: "{{ swimtrack_front_requirements_marker }}"
+  register: swimtrack_front_requirements_marker_stat
+
+- name: Read the requirements synchronization marker
+  ansible.builtin.slurp:
+    src: "{{ swimtrack_front_requirements_marker }}"
+  register: swimtrack_front_requirements_marker_content
+  when: swimtrack_front_requirements_marker_stat.stat.exists
+
+- name: Inspect the production virtual environment
+  ansible.builtin.stat:
+    path: "{{ swimtrack_front_repo_dir }}/.venv/bin/gunicorn"
+  register: swimtrack_front_venv
+
+- name: Decide whether dependencies need synchronization
+  ansible.builtin.set_fact:
+    swimtrack_front_needs_sync: >-
+      {{
+        not swimtrack_front_venv.stat.exists
+        or not swimtrack_front_requirements_marker_stat.stat.exists
+        or (swimtrack_front_requirements_marker_content.content | default('') | b64decode | trim) != swimtrack_front_requirements_fingerprint
+      }}
+
+- name: Create or update the front virtual environment
+  ansible.builtin.command:
+    argv:
+      - "{{ swimtrack_front_uv_path }}"
+      - venv
+      - --python
+      - "{{ swimtrack_front_python_path }}"
+      - .venv
+    chdir: "{{ swimtrack_front_repo_dir }}"
+  when:
+    - swimtrack_front_needs_sync
+    - not swimtrack_front_venv.stat.exists
+  changed_when: true
+
+- name: Install the front Python dependencies
+  ansible.builtin.command:
+    argv:
+      - "{{ swimtrack_front_uv_path }}"
+      - pip
+      - install
+      - --python
+      - "{{ swimtrack_front_repo_dir }}/.venv/bin/python"
+      - -r
+      - requirements.txt
+    chdir: "{{ swimtrack_front_repo_dir }}"
+  when: swimtrack_front_needs_sync
+  changed_when: true
+  notify: Restart SwimTrack front
+
+- name: Record the installed requirements fingerprint
+  ansible.builtin.copy:
+    content: "{{ swimtrack_front_requirements_fingerprint }}\n"
+    dest: "{{ swimtrack_front_requirements_marker }}"
+    mode: "0644"
+  when: swimtrack_front_needs_sync
+
+- name: Create the local front secret directory
+  ansible.builtin.file:
+    path: "{{ swimtrack_front_local_secret_file | dirname }}"
+    state: directory
+    mode: "0700"
+  delegate_to: localhost
+  run_once: true
+
+- name: Load or generate the Flask secret key
+  ansible.builtin.set_fact:
+    swimtrack_front_flask_secret_key: "{{ lookup('ansible.builtin.password', swimtrack_front_local_secret_file, length=48, chars=['ascii_letters', 'digits']) }}"
+  no_log: true
+
+- name: Protect the local Flask secret key
+  ansible.builtin.file:
+    path: "{{ swimtrack_front_local_secret_file }}"
+    mode: "0600"
+  delegate_to: localhost
+  run_once: true
+  no_log: true
+
+- name: Load the private AI credentials for the Front
+  ansible.builtin.import_tasks: vision_credentials.yml
+
+- name: Create remote front configuration directories
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: directory
+    mode: "{{ item.mode }}"
+  loop:
+    - path: "{{ swimtrack_front_config_dir }}"
+      mode: "0700"
+    - path: "{{ swimtrack_front_systemd_dir }}"
+      mode: "0755"
+
+- name: Install the private front environment
+  ansible.builtin.template:
+    src: swimtrack-front.env.j2
+    dest: "{{ swimtrack_front_environment_file }}"
+    mode: "0600"
+  no_log: true
+  notify: Restart SwimTrack front
+
+- name: Validate the Gunicorn configuration
+  ansible.builtin.command:
+    argv:
+      - "{{ swimtrack_front_repo_dir }}/.venv/bin/python"
+      - -m
+      - gunicorn
+      - --check-config
+      - -c
+      - gunicorn.conf.py
+      - app:app
+    chdir: "{{ swimtrack_front_repo_dir }}"
+  environment:
+    FLASK_ENV: production
+    FLASK_SECRET_KEY: "{{ swimtrack_front_flask_secret_key }}"
+    URL_PREFIX: "{{ swimtrack_front_url_prefix }}"
+  no_log: true
+  changed_when: false
+
+- name: Install the front user service unit
+  ansible.builtin.template:
+    src: swimtrack-front.service.j2
+    dest: "{{ swimtrack_front_systemd_dir }}/{{ swimtrack_front_service_name }}"
+    mode: "0644"
+  notify: Restart SwimTrack front
+
+- name: Apply pending front service restarts
+  ansible.builtin.meta: flush_handlers
+
+- name: Ensure the front user service is enabled and running
+  ansible.builtin.systemd_service:
+    name: "{{ swimtrack_front_service_name }}"
+    scope: user
+    daemon_reload: true
+    enabled: true
+    state: started
+  environment: "{{ swimtrack_front_systemd_environment }}"
+
+- name: Verify that the front root page responds
+  block:
+    - name: Request the front root page
+      ansible.builtin.uri:
+        url: "http://{{ swimtrack_front_bind_host }}:{{ swimtrack_front_port }}{{ swimtrack_front_url_prefix }}"
+        method: GET
+        status_code: 200
+        return_content: false
+  rescue:
+    - name: Read recent front service logs
+      ansible.builtin.command:
+        argv:
+          - journalctl
+          - --user
+          - --unit
+          - "{{ swimtrack_front_service_name }}"
+          - --lines
+          - "100"
+          - --no-pager
+      environment: "{{ swimtrack_front_systemd_environment }}"
+      register: swimtrack_front_journal
+      changed_when: false
+      failed_when: false
+      check_mode: false
+
+    - name: Report recent front service logs
+      ansible.builtin.debug:
+        var: swimtrack_front_journal.stdout_lines
+
+    - name: Stop after front readiness failure
+      ansible.builtin.fail:
+        msg: "SwimTrack front did not respond on {{ swimtrack_front_bind_host }}:{{ swimtrack_front_port }}{{ swimtrack_front_url_prefix }}."
+
+- name: Verify the configured AI connection from the Front host
+  ansible.builtin.import_tasks: verify_vision.yml
