@@ -15,7 +15,13 @@
     - name: Generate a synthetic JPEG frame
       ansible.builtin.command:
         argv:
-          - "{{ swimtrack_ai_repo_dir }}/.venv/bin/python"
+          - "{{ swimtrack_ai_uv_path }}"
+          - run
+          - --project
+          - "{{ swimtrack_ai_repo_dir }}"
+          - --locked
+          - --no-sync
+          - python
           - -c
           - "import cv2, numpy as np; image = np.zeros((640, 640, 3), dtype=np.uint8); cv2.circle(image, (320, 110), 55, (255, 255, 255), -1); cv2.rectangle(image, (250, 160), (390, 570), (255, 255, 255), -1); assert cv2.imwrite('/tmp/swimtrack-ai-smoke.jpg', image)"
       changed_when: true
@@ -28,11 +34,27 @@
           X-Swimtrack-Auth: "{{ swimtrack_ai_auth_token }}"
         body_format: json
         body:
-          fps: 30.0
+          fps: 60.0
+          lap_calibration_id: fixed-camera-v1
+          diagnostics: counts
         status_code: 201
         return_content: true
       register: swimtrack_smoke_session
       no_log: true
+
+    - name: Validate the effective tracker configuration
+      ansible.builtin.assert:
+        that:
+          - swimtrack_smoke_session.json.tracking_configuration.diagnostic_score_floor | float == swimtrack_ai_diagnostic_score_floor | float
+          - swimtrack_smoke_session.json.tracking_configuration.score_threshold | float == swimtrack_ai_score_threshold | float
+          - swimtrack_smoke_session.json.tracking_configuration.min_box_area | float == swimtrack_ai_min_box_area | float
+          - swimtrack_smoke_session.json.tracking_configuration.track_threshold | float == swimtrack_ai_track_threshold | float
+          - swimtrack_smoke_session.json.tracking_configuration.track_buffer | int == swimtrack_ai_track_buffer | int
+          - swimtrack_smoke_session.json.tracking_configuration.match_threshold | float == swimtrack_ai_match_threshold | float
+          - swimtrack_smoke_session.json.tracking_configuration.mot20 | bool == swimtrack_ai_mot20 | bool
+          - swimtrack_smoke_session.json.tracking_configuration.lane_roi_enabled | bool == swimtrack_ai_lane_roi_enabled | bool
+          - swimtrack_smoke_session.json.tracking_configuration.lane_ids == ['center']
+        fail_msg: "The running service did not apply the deployed tracker configuration."
 
     - name: Submit one frame for inference and tracking
       ansible.builtin.uri:
