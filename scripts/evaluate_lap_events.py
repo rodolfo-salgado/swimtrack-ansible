@@ -301,15 +301,45 @@ def extract_predictions(
                 "frame_time_ms": frame_time_ms,
                 "endpoint": score.get("endpoint"),
                 "track_id": score.get("track_id"),
+                "candidate_episode_id": score.get("candidate_episode_id"),
             }
+            episode_id = candidate["candidate_episode_id"]
+            if episode_id is not None and (
+                isinstance(episode_id, bool)
+                or not isinstance(episode_id, int)
+                or episode_id < 1
+            ):
+                raise EvaluationError(f"{name}.candidate_episode_id must be a positive integer")
             if not _candidate_in_scope(candidate, video["subjects"]):
                 ignored_outside_scope += 1
                 continue
             candidates.append(candidate)
 
-    selected: list[dict[str, Any]] = []
+    episode_candidates: dict[tuple[str, int], dict[str, Any]] = {}
+    legacy_candidates: list[dict[str, Any]] = []
+    for candidate in candidates:
+        episode_id = candidate["candidate_episode_id"]
+        if episode_id is None:
+            legacy_candidates.append(candidate)
+            continue
+        key = (candidate["lane_id"], episode_id)
+        existing = episode_candidates.get(key)
+        candidate_rank = (
+            candidate["lap_score"],
+            -candidate["frame_time_ms"],
+            -candidate["timestamp_ms"],
+        )
+        existing_rank = (
+            existing["lap_score"],
+            -existing["frame_time_ms"],
+            -existing["timestamp_ms"],
+        ) if existing is not None else None
+        if existing_rank is None or candidate_rank > existing_rank:
+            episode_candidates[key] = candidate
+
+    selected: list[dict[str, Any]] = list(episode_candidates.values())
     for candidate in sorted(
-        candidates,
+        legacy_candidates,
         key=lambda item: (
             -item["lap_score"],
             item["timestamp_ms"],

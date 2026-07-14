@@ -18,7 +18,12 @@ from evaluate_lap_events import aggregate, evaluate_video, load_manifest  # noqa
 
 
 def frame(
-    time_seconds: float, candidate_ms: float, score: float, *, lane_id: str = "center"
+    time_seconds: float,
+    candidate_ms: float,
+    score: float,
+    *,
+    lane_id: str = "center",
+    episode_id: int | None = None,
 ) -> dict:
     return {
         "time": time_seconds,
@@ -31,6 +36,11 @@ def frame(
                 "candidate_time_ms": candidate_ms,
                 "endpoint": "far",
                 "track_id": 1,
+                **(
+                    {"candidate_episode_id": episode_id}
+                    if episode_id is not None
+                    else {}
+                ),
             }
         ],
     }
@@ -82,6 +92,39 @@ class LapEventEvaluationTests(unittest.TestCase):
             {"true_positives": 0, "false_positives": 0, "false_negatives": 0},
         )
         self.assertEqual(result["ignored_candidates_outside_subject_intervals"], 1)
+
+    def test_candidate_episode_is_counted_once_beyond_legacy_time_window(self) -> None:
+        result = evaluate_video(
+            "test04",
+            [
+                frame(30.0, 29000, 0.70, episode_id=1),
+                frame(32.0, 31500, 0.90, episode_id=1),
+            ],
+            self.manifest,
+            threshold=0.50,
+        )
+        self.assertEqual(len(result["predicted_events"]), 1)
+        self.assertEqual(result["predicted_events"][0]["candidate_episode_id"], 1)
+        self.assertEqual(
+            result["counts"],
+            {"true_positives": 1, "false_positives": 0, "false_negatives": 0},
+        )
+
+    def test_distinct_candidate_episodes_remain_distinct_predictions(self) -> None:
+        result = evaluate_video(
+            "test04",
+            [
+                frame(30.0, 29500, 0.80, episode_id=1),
+                frame(30.1, 30500, 0.70, episode_id=2),
+            ],
+            self.manifest,
+            threshold=0.50,
+        )
+        self.assertEqual(len(result["predicted_events"]), 2)
+        self.assertEqual(
+            result["counts"],
+            {"true_positives": 1, "false_positives": 1, "false_negatives": 0},
+        )
 
     def test_secondary_video_does_not_contribute_to_primary_aggregate(self) -> None:
         primary = evaluate_video("test04", [], self.manifest, threshold=0.50)
