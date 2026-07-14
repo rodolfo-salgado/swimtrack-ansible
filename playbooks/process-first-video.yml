@@ -1,0 +1,149 @@
+---
+- name: Process a SwimTrack video through the published system
+  hosts: front_hosts
+  gather_facts: false
+  any_errors_fatal: true
+  serial: 1
+  vars:
+    video_stem: 20260513_201705_test01
+    source_video: "{{ playbook_dir }}/../../input_vids/{{ video_stem }}.mp4"
+    source_sha256: c981fbadc43d11999ea63804699dc6edcc3ee4a9d9bd1d33ab73afe7a2457f1d
+    expected_events: "1441"
+    result_dir: "{{ playbook_dir }}/../../results/{{ video_stem }}"
+    result_stream: "{{ result_dir }}/stream.sse"
+    result_summary: "{{ result_dir }}/summary.json"
+    validator: "{{ playbook_dir }}/../scripts/validate_sse_e2e.py"
+    summarizer: "{{ playbook_dir }}/../scripts/summarize_lap_scores.py"
+    endpoint: http://127.0.0.1/swimtrack/api/detect
+  tasks:
+    - name: Process and collect the original video
+      block:
+        - name: Inspect the immutable controller video
+          ansible.builtin.stat:
+            path: "{{ source_video }}"
+            checksum_algorithm: sha256
+          register: source_video_stat
+          delegate_to: localhost
+
+        - name: Require the expected video
+          ansible.builtin.assert:
+            that:
+              - source_video_stat.stat.exists
+              - source_video_stat.stat.isreg
+              - source_video_stat.stat.checksum == source_sha256
+
+        - name: Create the controller result directory
+          ansible.builtin.file:
+            path: "{{ result_dir }}"
+            state: directory
+            mode: "0755"
+          delegate_to: localhost
+
+        - name: Create a temporary video path on the Front host
+          ansible.builtin.tempfile:
+            state: file
+            suffix: .mp4
+          register: remote_video
+
+        - name: Create a temporary SSE path on the Front host
+          ansible.builtin.tempfile:
+            state: file
+            suffix: .sse
+          register: remote_stream
+
+        - name: Copy the complete original video to the Front host
+          ansible.builtin.copy:
+            src: "{{ source_video }}"
+            dest: "{{ remote_video.path }}"
+            mode: "0600"
+
+        - name: Process the complete video through Apache, Front and AI
+          ansible.builtin.command:
+            argv:
+              - curl
+              - --silent
+              - --show-error
+              - --fail-with-body
+              - --no-buffer
+              - --max-time
+              - "900"
+              - --header
+              - "Accept: text/event-stream"
+              - --form
+              - "video=@{{ remote_video.path }};type=video/mp4"
+              - --output
+              - "{{ remote_stream.path }}"
+              - --write-out
+              - '%{response_code} %{content_type}\n'
+              - "{{ endpoint }}"
+          register: process_video_curl
+          changed_when: false
+
+        - name: Require a successful SSE response
+          ansible.builtin.assert:
+            that:
+              - process_video_curl.stdout is match('^200\s+text/event-stream')
+
+        - name: Fetch the complete SSE response
+          ansible.builtin.fetch:
+            src: "{{ remote_stream.path }}"
+            dest: "{{ result_stream }}"
+            flat: true
+
+        - name: Validate the complete video SSE contract
+          ansible.builtin.command:
+            argv:
+              - uv
+              - run
+              - --script
+              - "{{ validator }}"
+              - --stream
+              - "{{ result_stream }}"
+              - --expected-events
+              - "{{ expected_events }}"
+              - --width
+              - "1080"
+              - --height
+              - "1080"
+              - --fps
+              - "60"
+              - --time-tolerance
+              - "0.002"
+          register: contract_validation
+          delegate_to: localhost
+          changed_when: false
+
+        - name: Summarize the complete lap-score stream
+          ansible.builtin.command:
+            argv:
+              - uv
+              - run
+              - --script
+              - "{{ summarizer }}"
+              - --stream
+              - "{{ result_stream }}"
+              - --output
+              - "{{ result_summary }}"
+          register: lap_summary
+          delegate_to: localhost
+          changed_when: false
+
+        - name: Report the transport contract summary
+          ansible.builtin.debug:
+            msg: "{{ contract_validation.stdout | from_json | to_nice_json }}"
+
+        - name: Report the lap-score summary
+          ansible.builtin.debug:
+            msg: "{{ lap_summary.stdout | from_json | to_nice_json }}"
+      always:
+        - name: Remove the temporary video from the Front host
+          ansible.builtin.file:
+            path: "{{ remote_video.path }}"
+            state: absent
+          when: remote_video is defined
+
+        - name: Remove the temporary SSE stream from the Front host
+          ansible.builtin.file:
+            path: "{{ remote_stream.path }}"
+            state: absent
+          when: remote_stream is defined

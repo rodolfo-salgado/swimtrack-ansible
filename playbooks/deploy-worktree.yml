@@ -1,0 +1,136 @@
+---
+- name: Deploy the local SwimTrack AI worktree overlay
+  hosts: gpu_hosts
+  gather_facts: true
+  any_errors_fatal: true
+  vars:
+    local_worktree: "{{ playbook_dir }}/../../swimtrack-ai"
+    remote_worktree: /home/grupo1/swimtrack/swimtrack-ai
+    service_name: swimtrack-ai.service
+    systemd_user_environment:
+      XDG_RUNTIME_DIR: "/run/user/{{ ansible_facts['user_uid'] }}"
+      DBUS_SESSION_BUS_ADDRESS: "unix:path=/run/user/{{ ansible_facts['user_uid'] }}/bus"
+    runtime_files:
+      - src/swimtrack_ai/api.py
+      - src/swimtrack_ai/lap_analysis.py
+      - src/swimtrack_ai/schemas.py
+      - src/swimtrack_ai/service.py
+  tasks:
+    - name: Verify the local AI runtime files
+      ansible.builtin.stat:
+        path: "{{ local_worktree }}/{{ item }}"
+      loop: "{{ runtime_files }}"
+      register: local_ai_files
+      delegate_to: localhost
+
+    - name: Require every local AI runtime file
+      ansible.builtin.assert:
+        that:
+          - local_ai_files.results | map(attribute='stat.exists') | min
+          - local_ai_files.results | map(attribute='stat.isreg') | min
+
+    - name: Copy the local AI runtime overlay
+      ansible.builtin.copy:
+        src: "{{ local_worktree }}/{{ item }}"
+        dest: "{{ remote_worktree }}/{{ item }}"
+        mode: "0644"
+      loop: "{{ runtime_files }}"
+      register: ai_overlay
+
+    - name: Restart the AI user service after an overlay change
+      ansible.builtin.systemd_service:
+        name: "{{ service_name }}"
+        scope: user
+        state: restarted
+      environment: "{{ systemd_user_environment }}"
+      when: ai_overlay.results | selectattr('changed') | list | length > 0
+
+    - name: Wait for the overlaid AI service
+      ansible.builtin.uri:
+        url: http://10.0.218.101:7001/readyz
+        method: GET
+        status_code: 200
+        return_content: true
+      register: ai_ready
+      until: ai_ready.status | default(0) == 200
+      retries: 60
+      delay: 2
+
+    - name: Require the TensorRT backend after the overlay
+      ansible.builtin.assert:
+        that:
+          - ai_ready.json.status == 'ready'
+          - ai_ready.json.backend == 'tensorrt'
+
+- name: Deploy the local SwimTrack Front worktree overlay
+  hosts: front_hosts
+  gather_facts: true
+  any_errors_fatal: true
+  vars:
+    local_worktree: "{{ playbook_dir }}/../../swimtrack-front"
+    remote_worktree: /home/grupo1/swimtrack/swimtrack-front
+    environment_file: /home/grupo1/.config/swimtrack-front/swimtrack-front.env
+    service_name: swimtrack-front.service
+    systemd_user_environment:
+      XDG_RUNTIME_DIR: "/run/user/{{ ansible_facts['user_uid'] }}"
+      DBUS_SESSION_BUS_ADDRESS: "unix:path=/run/user/{{ ansible_facts['user_uid'] }}/bus"
+    runtime_files:
+      - config.py
+      - remote_detector.py
+  tasks:
+    - name: Verify the local Front runtime files
+      ansible.builtin.stat:
+        path: "{{ local_worktree }}/{{ item }}"
+      loop: "{{ runtime_files }}"
+      register: local_front_files
+      delegate_to: localhost
+
+    - name: Require every local Front runtime file
+      ansible.builtin.assert:
+        that:
+          - local_front_files.results | map(attribute='stat.exists') | min
+          - local_front_files.results | map(attribute='stat.isreg') | min
+
+    - name: Copy the local Front runtime overlay
+      ansible.builtin.copy:
+        src: "{{ local_worktree }}/{{ item }}"
+        dest: "{{ remote_worktree }}/{{ item }}"
+        mode: "0644"
+      loop: "{{ runtime_files }}"
+      register: front_overlay
+
+    - name: Enable the fixed-camera lap calibration
+      ansible.builtin.lineinfile:
+        path: "{{ environment_file }}"
+        regexp: '^VISION_LAP_CALIBRATION_ID='
+        line: VISION_LAP_CALIBRATION_ID=fixed-camera-v1
+        mode: "0600"
+      register: front_lap_environment
+
+    - name: Restart the Front user service after an overlay change
+      ansible.builtin.systemd_service:
+        name: "{{ service_name }}"
+        scope: user
+        state: restarted
+      environment: "{{ systemd_user_environment }}"
+      when: >-
+        front_lap_environment.changed
+        or (front_overlay.results | selectattr('changed') | list | length > 0)
+
+    - name: Wait for the overlaid Front service
+      ansible.builtin.uri:
+        url: http://127.0.0.1:7101/swimtrack/
+        method: GET
+        status_code: 200
+        return_content: false
+      register: front_ready
+      until: front_ready.status | default(0) == 200
+      retries: 30
+      delay: 2
+
+    - name: Verify the Apache publication after the overlay
+      ansible.builtin.uri:
+        url: http://127.0.0.1/swimtrack/
+        method: GET
+        status_code: 200
+        return_content: false

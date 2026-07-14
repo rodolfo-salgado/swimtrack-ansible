@@ -1,6 +1,6 @@
 # SwimTrack Ansible
 
-Despliega `swimtrack-ai` en la máquina GPU accesible mediante el alias SSH `proyecto_ia_gpu`, sin Docker ni sudo. El playbook instala las dependencias con `uv`, copia el ONNX y su external data, limita el proceso a GPU 0 y mantiene Uvicorn mediante un servicio `systemd --user` persistente.
+Despliega `swimtrack-ai` en la máquina GPU accesible mediante el alias SSH `proyecto_ia_gpu`, instala las dependencias con `uv`, copia el ONNX y su external data, limita el proceso a GPU 0 y mantiene Uvicorn mediante un servicio `systemd --user` persistente. También despliega `swimtrack-front` en `proyecto_ia` como servicio Gunicorn de usuario. Para esta VM temporal, AI se publica en la red privada usando el rango de puertos ya abierto y el token compartido, sin cambios de firewall ni `sudo`.
 
 ## Requisitos del controller
 
@@ -34,22 +34,22 @@ Después del despliegue ejecuta una inferencia autenticada sobre un frame sinté
 ./ansible-run ansible-playbook playbooks/smoke.yml
 ```
 
-El token compartido se genera una sola vez en `~/.ansible/swimtrack-ai/auth_token`, queda con permisos `0600` sobre el filesystem Linux y nunca se imprime ni se incluye en Git. No se guarda dentro de `/mnt/c` porque ese montaje WSL no garantiza permisos POSIX restrictivos. Para configurar `swimtrack-front`, copia manualmente su valor a `VISION_AUTH_TOKEN`; no envíes el token por chat ni lo guardes en archivos versionados. Para un controller compartido, reemplaza este mecanismo por Ansible Vault o un secret manager.
+El token compartido se genera una sola vez en `~/.ansible/swimtrack-ai/auth_token`, queda con permisos `0600` sobre el filesystem Linux y nunca se imprime ni se incluye en Git. No se guarda dentro de `/mnt/c` porque ese montaje WSL no garantiza permisos POSIX restrictivos. El rol del Front lo lee desde el controller y lo instala en su environment file `0600`; no lo copies manualmente, no lo envíes por chat ni lo guardes en archivos versionados. Para un controller compartido, reemplaza este mecanismo por Ansible Vault o un secret manager.
 
-El servicio queda disponible solamente en `127.0.0.1:8001` de la máquina GPU. Desde la máquina del front abre el tunnel:
+La configuración del inventario publica AI en `10.0.218.101:7001`, dentro del rango ya abierto de la VM. El deploy no modifica UFW ni requiere privilegios de administrador; el servicio sigue ejecutándose como `grupo1`. El token sigue siendo obligatorio en todas las rutas `/v1/*`, pero la red no queda restringida por origen: esta configuración es exclusiva de la VM temporal del proyecto.
 
 ```bash
-ssh -NT -F ~/.ssh/config -o ExitOnForwardFailure=yes -o ServerAliveInterval=30 -L 127.0.0.1:18001:127.0.0.1:8001 proyecto_ia_gpu
+./ansible-run ansible-playbook playbooks/deploy.yml
 ```
 
-Configura `VISION_BASE_URL=http://127.0.0.1:18001` en el front.
+No publiques AI en `0.0.0.0` ni reutilices esta configuración fuera de la red privada y la VM temporal del proyecto.
 
 ## Operación
 
 ```bash
 ssh -F ~/.ssh/config proyecto_ia_gpu systemctl --user status swimtrack-ai.service
 ssh -F ~/.ssh/config proyecto_ia_gpu journalctl --user --unit swimtrack-ai.service --follow
-curl --fail --show-error http://127.0.0.1:18001/readyz
+ssh -F ~/.ssh/config proyecto_ia 'curl --fail --show-error http://10.0.218.101:7001/readyz'
 ```
 
 Reejecutar el playbook es seguro: los modelos usan checksums, las dependencias solo se sincronizan cuando cambia `uv.lock`, el token se conserva y el servicio solo se reinicia ante cambios. Para simular una actualización ya desplegada:
@@ -59,3 +59,36 @@ Reejecutar el playbook es seguro: los modelos usan checksums, las dependencias s
 ```
 
 La revisión desplegada se fija en `inventory/group_vars/gpu_hosts.yml`. Modifica ese SHA únicamente después de publicar y validar el commit correspondiente en `swimtrack-ai`.
+
+## Frontend
+
+El playbook del front fija una revisión publicada de `swimtrack-front`, crea un entorno `.venv` con `uv`, instala `requirements.txt`, genera una `FLASK_SECRET_KEY` privada en el controller y mantiene Gunicorn en un puerto loopback configurable. El inventario de `proyecto_ia` usa `127.0.0.1:7101` porque 7001 ya está ocupado en ese host. Configura `VISION_BASE_URL=http://10.0.218.101:7001`, carga el token compartido desde el controller y comprueba una sesión autenticada contra AI.
+
+```bash
+./ansible-run ansible-playbook playbooks/preflight-front.yml
+./ansible-run ansible-playbook playbooks/deploy-front.yml
+./ansible-run ansible-playbook playbooks/smoke-front.yml
+```
+
+El servicio se prepara con `URL_PREFIX=/swimtrack/`. Para publicarlo, ejecuta el playbook dedicado. Actualiza el único mapeo existente de `/swimtrack/` en el VirtualHost activo, valida Apache antes de recargarlo y no agrega otro sitio ni un `ProxyPass` duplicado. El host ya concede a `grupo1` `sudo` sin contraseña para esta operación específica.
+
+```bash
+./ansible-run ansible-playbook playbooks/publish-front.yml
+```
+
+El proxy conserva el prefijo al reenviar a Gunicorn y permite hasta diez minutos para un stream de video:
+
+```apache
+ProxyPass        /swimtrack/  http://127.0.0.1:7101/swimtrack/ connectiontimeout=5 timeout=600
+ProxyPassReverse /swimtrack/ http://127.0.0.1:7101/swimtrack/
+```
+
+## Prueba E2E publicada
+
+La prueba E2E genera temporalmente un clip de dos segundos y 20 frames desde `input_vids/20260513_201705_test01.mp4`, lo sube a `http://127.0.0.1/swimtrack/api/detect` en `proyecto_ia` y valida la cadena Apache → Gunicorn/Flask → AI GPU → SSE. No forma parte del despliegue normal porque realiza inferencia real y TensorRT serializa ese trabajo.
+
+```bash
+./ansible-run ansible-playbook playbooks/e2e-front.yml
+```
+
+El contrato y los resultados que se pueden exigir hoy están en `e2e/reference-video.yml`. La prueba exige transporte, SSE, un evento por frame, timestamps, dimensiones, cajas válidas y el conteo acumulado de IDs. No exige aún cantidad de nadadores, cajas no vacías, IDs concretos ni vueltas: faltan ground truth, identidad/carril y la definición de producto de una vuelta. `known_good_run` conserva una observación aprobada de la primera corrida real sin convertirla en una regla de producto prematuramente.
