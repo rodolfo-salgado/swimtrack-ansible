@@ -78,6 +78,15 @@ No existe un modo `active`. Activar el conteo visible queda explícitamente posp
 - Ansible syntax check: aprobado para `deploy-worktree.yml` y `deploy-front.yml`.
 - Baseline reproducido para `X=2 s`: 167 ventanas primary, 151 evaluables, 16 abstenciones; strict `2/141/4/4`; temporal `6/145/0/0`.
 
+## Validación desplegada
+
+El 2026-07-14 se desplegó el overlay mediante `playbooks/deploy-worktree.yml`. AI permaneció en el backend TensorRT sin cambios y el Front copió `app.py`, `config.py` y `lap_episode_reducer.py`, configuró `LAP_EPISODE_MODE=shadow`, eliminó cualquier `LAP_CONFIDENCE_THRESHOLD` y reinició correctamente. Una comprobación sanitizada del environment remoto confirmó `lap_episode_mode=shadow threshold=unset`.
+
+- Smoke AI/TensorRT: aprobado; una tracking session autenticada procesó un frame y se cerró correctamente.
+- Smoke Front: aprobado; root, static asset, validación de upload y conectividad autenticada Front → AI respondieron correctamente.
+- E2E Apache → Front → AI/TensorRT → SSE: aprobado con 20/20 eventos, timestamps `0.0–1.9 s`, 17 frames con boxes, un track ID único y `max_cumulative_track_count=1`.
+- El E2E no activó decisiones de vuelta ni cambió el contador visible porque el threshold permanece ausente.
+
 ## Reproducción
 
 Ejecutar desde `swimtrack-ansible/`, siempre con `uv`:
