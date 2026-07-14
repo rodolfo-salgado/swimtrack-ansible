@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import math
 import sys
@@ -63,7 +64,7 @@ def validate_configuration(
     confidence_threshold: float,
 ) -> dict[str, float]:
     """Validate public numeric parameters and return normalized floats."""
-    return {
+    normalized = {
         "window_size_ms": _number(
             window_size_ms, "window_size_ms", minimum=math.nextafter(0.0, 1.0)
         ),
@@ -76,6 +77,11 @@ def validate_configuration(
             confidence_threshold, "confidence_threshold", minimum=0, maximum=1
         ),
     }
+    if normalized["stride_ms"] > normalized["window_size_ms"]:
+        raise WindowEvaluationError(
+            "stride_ms must not exceed window_size_ms because uncovered gaps make window labels undefined"
+        )
+    return normalized
 
 
 def _merge_intervals(
@@ -196,9 +202,9 @@ def _normalize_frames(
                 raise WindowEvaluationError(
                     f"{name}.candidate_episode_id must be a positive integer"
                 )
-            if candidate_time_ms is not None and episode_id is None:
+            if (candidate_time_ms is None) != (episode_id is None):
                 raise WindowEvaluationError(
-                    f"{name}.candidate_episode_id is required when candidate_time_ms is present"
+                    f"{name}.candidate_time_ms and candidate_episode_id must appear together"
                 )
             lane_scores[lane_id] = {
                 "lane_id": lane_id,
@@ -214,11 +220,13 @@ def _normalize_frames(
         frames.append(
             {"frame_index": frame_index, "time_ms": time_ms, "scores": lane_scores}
         )
+    if not score_versions:
+        raise WindowEvaluationError("stream contains no lap score version")
     if len(score_versions) > 1:
         raise WindowEvaluationError(
             f"stream mixes score versions: {sorted(score_versions)!r}"
         )
-    return frames, next(iter(score_versions), None)
+    return frames, next(iter(score_versions))
 
 
 def _reduce_episodes(
@@ -304,6 +312,11 @@ def build_video_dataset(
     )
     video = manifest["videos"][video_id]
     lane_intervals = _lane_intervals(video)
+    for event in video["turn_events"]:
+        if not _in_intervals(event["timestamp_ms"], lane_intervals[event["lane_id"]]):
+            raise WindowEvaluationError(
+                f"{video_id} event {event['id']!r} is outside its half-open active interval"
+            )
     frames, score_version = _normalize_frames(messages)
     if expected_score_version is not None and score_version != expected_score_version:
         raise WindowEvaluationError(
@@ -441,11 +454,8 @@ def _rates(counts: dict[str, int]) -> dict[str, float | None]:
     specificity = tn / (tn + fp) if tn + fp else None
     negative_predictive_value = tn / (tn + fn) if tn + fn else None
     accuracy = (tp + tn) / (tp + tn + fp + fn) if tp + tn + fp + fn else None
-    f1 = (
-        2 * precision * recall / (precision + recall)
-        if precision is not None and recall is not None and precision + recall
-        else None
-    )
+    f1_denominator = 2 * tp + fp + fn
+    f1 = 2 * tp / f1_denominator if f1_denominator else None
     balanced_accuracy = (
         (recall + specificity) / 2
         if recall is not None and specificity is not None
@@ -662,7 +672,8 @@ def evaluate_video_dataset(
                     "abstain"
                     if not evaluable
                     else "lap"
-                    if raw_lap_score >= threshold
+                    if base_row["selected_candidate_episode_id"] is not None
+                    and raw_lap_score >= threshold
                     else "no_lap"
                 ),
             }
@@ -797,6 +808,28 @@ def _stream_argument(value: str) -> tuple[str, Path]:
     return video_id, Path(raw_path)
 
 
+def _display_path(path: Path) -> str:
+    resolved = path.resolve()
+    try:
+        return resolved.relative_to(PROJECT_DIR.parent).as_posix()
+    except ValueError:
+        return resolved.as_posix()
+
+
+def _file_metadata(path: Path) -> dict[str, Any]:
+    digest = hashlib.sha256()
+    size_bytes = 0
+    with path.open("rb") as source:
+        while chunk := source.read(1024 * 1024):
+            digest.update(chunk)
+            size_bytes += len(chunk)
+    return {
+        "path": _display_path(path),
+        "size_bytes": size_bytes,
+        "sha256": digest.hexdigest(),
+    }
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--manifest", type=Path, default=DEFAULT_MANIFEST)
@@ -855,6 +888,7 @@ def main() -> int:
             raise WindowEvaluationError("each video id may be supplied only once")
         manifest = load_manifest(args.manifest.resolve())
         datasets: list[dict[str, Any]] = []
+        input_streams: list[dict[str, Any]] = []
         for video_id, stream_path in args.stream:
             try:
                 messages = parse_messages(stream_path.read_text(encoding="utf-8"))
@@ -874,6 +908,7 @@ def main() -> int:
                     expected_score_version=args.expected_score_version,
                 )
             )
+            input_streams.append({"video_id": video_id, **_file_metadata(stream_path)})
         versions = {dataset["score_version"] for dataset in datasets}
         if len(versions) > 1:
             raise WindowEvaluationError(
@@ -897,8 +932,9 @@ def main() -> int:
             )
         result = {
             "schema_version": 1,
-            "ground_truth_manifest": str(args.manifest.resolve()),
+            "ground_truth_manifest": _file_metadata(args.manifest),
             "ground_truth_source": manifest["source"],
+            "input_streams": input_streams,
             "development_only": True,
             "confidence_interpretation": "heuristic_score_not_calibrated_probability",
             "configuration": {

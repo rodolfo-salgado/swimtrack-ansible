@@ -327,6 +327,48 @@ class LapWindowEvaluationTests(unittest.TestCase):
         self.assertEqual(dataset["rows"][0]["raw_lap_score"], 0.6)
         self.assertNotIn("predicted_label", dataset["rows"][0])
 
+    def test_zero_threshold_does_not_classify_empty_windows_as_lap(self) -> None:
+        ground_truth = manifest()
+        dataset = build([frame(index) for index in range(6)], ground_truth)
+
+        evaluation = evaluate_video_dataset(
+            dataset, ground_truth, confidence_threshold=0
+        )
+
+        self.assertTrue(
+            all(row["predicted_label"] == "no_lap" for row in evaluation["windows"])
+        )
+        self.assertEqual(evaluation["strict_window"]["counts"]["false_positives"], 0)
+
+    def test_f1_is_zero_when_predictions_and_events_exist_without_matches(self) -> None:
+        ground_truth = manifest(events=[3000])
+        dataset = build(
+            [
+                frame(0, lap_score=0.8, candidate_ms=0, episode_id=1),
+                frame(1),
+                frame(2),
+                frame(3),
+                frame(4),
+                frame(5),
+            ],
+            ground_truth,
+        )
+
+        evaluation = evaluate_video_dataset(
+            dataset, ground_truth, confidence_threshold=0.5
+        )
+
+        self.assertEqual(evaluation["strict_window"]["metrics"]["f1"], 0)
+        self.assertEqual(evaluation["temporal_tolerant"]["metrics"]["f1"], 0)
+
+    def test_event_at_exclusive_active_interval_end_is_rejected(self) -> None:
+        ground_truth = manifest(end_ms=6000, events=[6000])
+
+        with self.assertRaisesRegex(
+            WindowEvaluationError, "outside its half-open active interval"
+        ):
+            build([frame(index) for index in range(6)], ground_truth)
+
     def test_secondary_evaluation_is_excluded_from_primary_aggregate(self) -> None:
         primary_truth = manifest(events=[3000])
         secondary_truth = manifest(events=[3000], secondary=True)
@@ -371,11 +413,31 @@ class LapWindowEvaluationTests(unittest.TestCase):
                 confidence_threshold=0.5,
             )
         with self.assertRaises(WindowEvaluationError):
+            validate_configuration(
+                window_size_ms=2000,
+                stride_ms=3000,
+                anchor_ms=0,
+                coverage_threshold=0.5,
+                confidence_threshold=0.5,
+            )
+        with self.assertRaises(WindowEvaluationError):
             build([frame(0, lap_score=1.1)], manifest())
         with self.assertRaises(WindowEvaluationError):
             build(
                 [frame(0, lap_score=0.5, candidate_ms=0, episode_id=0)],
                 manifest(),
+            )
+        with self.assertRaises(WindowEvaluationError):
+            build([frame(0, lap_score=0.5, episode_id=1)], manifest())
+        with self.assertRaisesRegex(WindowEvaluationError, "no lap score version"):
+            build_video_dataset(
+                "primary",
+                [frame(0, include_lane=False)],
+                manifest(),
+                window_size_ms=2000,
+                stride_ms=2000,
+                anchor_ms=0,
+                coverage_threshold=0.5,
             )
         with self.assertRaises(WindowEvaluationError):
             build_video_dataset(
