@@ -3,9 +3,9 @@ schema_version: 1
 restore_defaults:
   lane_roi_enabled: true
   score_threshold: 0.15
-  min_box_area: 150
-  track_threshold: 0.35
-  track_buffer: 90
+  min_box_area: 250
+  track_threshold: 0.45
+  track_buffer: 60
   match_threshold: 0.80
   mot20: false
 
