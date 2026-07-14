@@ -109,6 +109,16 @@ uv run --script scripts/evaluate_lap_events.py --threshold 0.20 --stream test01=
 
 El ajuste realizado con estas anotaciones, la curva exploratoria de `trajectory-v5`, sus limitaciones y la validación live final están documentados en `e2e/lap-timestamp-report.md`.
 
+### Métricas por ventanas
+
+`scripts/evaluate_lap_windows.py` reduce primero cada `(video_id,lane_id,candidate_episode_id)` a su score máximo y después genera una fila por ventana half-open. `X`, stride, anchor, coverage threshold y confidence threshold son parámetros explícitos. Una ventana con coverage insuficiente produce `abstain`, no TN. El reporte separa la matriz strict de la variante temporal-tolerant y publica TP, TN, FP, FN, precision, recall, F1, specificity, balanced accuracy, MCC, coverage y abstention rate.
+
+```bash
+uv run --script scripts/evaluate_lap_windows.py --window-size-ms 2000 --stride-ms 2000 --anchor-ms 0 --coverage-threshold 0.5 --threshold 0.05 --sweep-threshold 0.03 --sweep-threshold 0.07 --sweep-threshold 0.08 --expected-score-version trajectory-v5 --stream test01=../results/test01/stream.sse --output ../results/lap-windows-x2000.json --rows-output ../results/lap-windows-x2000.jsonl
+```
+
+El mismo dataset threshold-independent se reutiliza internamente para todo el sweep. El baseline completo, los artefactos persistentes y las limitaciones de development están documentados en `e2e/lap-window-report.md`. Ningún resultado de ese reporte fija un threshold de producto.
+
 ### Recalcular lap scores sin GPU
 
 Un stream histórico ya contiene los timestamps, dimensiones y `boxes` inferidos por GPU. `replay_lap_scores.py` conserva esos datos y todas las demás claves de cada cuadro, reemplaza únicamente `lap_scores` mediante el `LapAnalyzer` de un checkout local de `swimtrack-ai` y genera otro stream SSE aceptado directamente por el evaluador. No ejecuta RT-DETRv2, TensorRT ni ByteTrack. Si el stream fue capturado con `tracking_diagnostics=boxes`, el replay también reconstruye el fallback de los scorers actuales a las detecciones dentro del ROI cuando ByteTrack no tiene un track activo; el nivel `counts` no contiene coordenadas suficientes para hacerlo.
