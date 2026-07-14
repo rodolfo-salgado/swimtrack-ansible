@@ -1,0 +1,118 @@
+schema_version: 1
+
+restore_defaults:
+  lane_roi_enabled: true
+  score_threshold: 0.15
+  min_box_area: 150
+  track_threshold: 0.35
+  track_buffer: 90
+  match_threshold: 0.80
+  mot20: false
+
+videos:
+  - id: test01
+    video_stem: 20260513_201705_test01
+    source_sha256: c981fbadc43d11999ea63804699dc6edcc3ee4a9d9bd1d33ab73afe7a2457f1d
+    expected_events: 1441
+    width: 1080
+    height: 1080
+    fps: 60
+    ground_truth:
+      label: no_lap
+      status: provisional_visual
+      turn_times_ms: []
+  - id: test06
+    video_stem: 20260513_201705_test06
+    source_sha256: 7e7f7c657b5daaebd91793a329d43405e9048512242cfffdfafaba3d51744305
+    expected_events: 2701
+    width: 1080
+    height: 1080
+    fps: 60
+    ground_truth:
+      label: lap
+      status: provisional_visual
+      turn_times_ms: [18100]
+      tolerance_ms: 1500
+
+variants:
+  - id: legacy_default
+    description: Original global tracker and conservative detector gates.
+    lane_roi_enabled: false
+    score_threshold: 0.35
+    min_box_area: 500
+    track_threshold: 0.45
+    track_buffer: 60
+    match_threshold: 0.80
+    mot20: false
+  - id: roi_legacy
+    description: Isolate lane routing while retaining the original thresholds.
+    lane_roi_enabled: true
+    score_threshold: 0.35
+    min_box_area: 500
+    track_threshold: 0.45
+    track_buffer: 60
+    match_threshold: 0.80
+    mot20: false
+  - id: score_020
+    description: Admit more low-confidence detections after lane routing.
+    lane_roi_enabled: true
+    score_threshold: 0.20
+    min_box_area: 500
+    track_threshold: 0.45
+    track_buffer: 60
+    match_threshold: 0.80
+    mot20: false
+  - id: score_015
+    description: Extend ByteTrack's low-confidence association range.
+    lane_roi_enabled: true
+    score_threshold: 0.15
+    min_box_area: 500
+    track_threshold: 0.45
+    track_buffer: 60
+    match_threshold: 0.80
+    mot20: false
+  - id: area_250
+    description: Retain smaller far-end swimmers at score threshold 0.15.
+    lane_roi_enabled: true
+    score_threshold: 0.15
+    min_box_area: 250
+    track_threshold: 0.45
+    track_buffer: 60
+    match_threshold: 0.80
+    mot20: false
+  - id: area_150
+    description: Use the proposed minimum far-end box area.
+    lane_roi_enabled: true
+    score_threshold: 0.15
+    min_box_area: 150
+    track_threshold: 0.45
+    track_buffer: 60
+    match_threshold: 0.80
+    mot20: false
+  - id: track_035
+    description: Lower ByteTrack's high-confidence and new-track gates.
+    lane_roi_enabled: true
+    score_threshold: 0.15
+    min_box_area: 150
+    track_threshold: 0.35
+    track_buffer: 60
+    match_threshold: 0.80
+    mot20: false
+  - id: buffer_090
+    description: Preserve lost lane tracks for a longer occlusion window.
+    lane_roi_enabled: true
+    score_threshold: 0.15
+    min_box_area: 150
+    track_threshold: 0.35
+    track_buffer: 90
+    match_threshold: 0.80
+    mot20: false
+  - id: match_090
+    description: Test more permissive first-stage IoU association inside the lane.
+    lane_roi_enabled: true
+    score_threshold: 0.15
+    min_box_area: 150
+    track_threshold: 0.35
+    track_buffer: 90
+    match_threshold: 0.90
+    mot20: false

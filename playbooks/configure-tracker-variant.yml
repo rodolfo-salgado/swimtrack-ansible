@@ -1,0 +1,117 @@
+---
+- name: Configure one SwimTrack tracker experiment variant
+  hosts: gpu_hosts
+  gather_facts: true
+  any_errors_fatal: true
+  serial: 1
+  vars:
+    tracker_environment_file: /home/grupo1/.config/swimtrack-ai/swimtrack-ai.env
+    tracker_service_name: swimtrack-ai.service
+    tracker_variant_id: manual
+    tracker_ready_url: "http://{{ swimtrack_ai_bind_host }}:{{ swimtrack_ai_port }}/readyz"
+    tracker_systemd_environment:
+      XDG_RUNTIME_DIR: "/run/user/{{ ansible_facts['user_uid'] }}"
+      DBUS_SESSION_BUS_ADDRESS: "unix:path=/run/user/{{ ansible_facts['user_uid'] }}/bus"
+  tasks:
+    - name: Require every tracker experiment variable
+      ansible.builtin.assert:
+        that:
+          - tracker_lane_roi_enabled is defined
+          - tracker_score_threshold is defined
+          - tracker_min_box_area is defined
+          - tracker_track_threshold is defined
+          - tracker_track_buffer is defined
+          - tracker_match_threshold is defined
+          - tracker_mot20 is defined
+        fail_msg: >-
+          Pass tracker_lane_roi_enabled, tracker_score_threshold,
+          tracker_min_box_area, tracker_track_threshold, tracker_track_buffer,
+          tracker_match_threshold and tracker_mot20 as extra vars.
+
+    - name: Validate the tracker experiment values
+      ansible.builtin.assert:
+        that:
+          - tracker_variant_id is string
+          - tracker_variant_id is match('^[a-z0-9][a-z0-9_-]*$')
+          - tracker_lane_roi_enabled is boolean
+          - tracker_score_threshold is number
+          - tracker_score_threshold is not boolean
+          - tracker_score_threshold | float >= 0.05
+          - tracker_score_threshold | float <= 1.0
+          - tracker_min_box_area is number
+          - tracker_min_box_area is not boolean
+          - tracker_min_box_area | float >= 0.0
+          - tracker_track_threshold is number
+          - tracker_track_threshold is not boolean
+          - tracker_track_threshold | float >= 0.0
+          - tracker_track_threshold | float <= 1.0
+          - tracker_track_buffer is integer
+          - tracker_track_buffer is not boolean
+          - tracker_track_buffer | int > 0
+          - tracker_match_threshold is number
+          - tracker_match_threshold is not boolean
+          - tracker_match_threshold | float >= 0.0
+          - tracker_match_threshold | float <= 1.0
+          - tracker_mot20 is boolean
+        fail_msg: >-
+          Tracker values must use JSON booleans/numbers, thresholds must be in
+          their valid ranges, score_threshold must be at least the diagnostic
+          floor 0.05, and track_buffer must be a positive integer.
+
+    - name: Install the tracker experiment values
+      ansible.builtin.lineinfile:
+        path: "{{ tracker_environment_file }}"
+        regexp: "^{{ item.name }}="
+        line: "{{ item.name }}={{ item.value }}"
+        mode: "0600"
+      loop:
+        - name: SWIMTRACK_LANE_ROI_ENABLED
+          value: "{{ tracker_lane_roi_enabled | bool | ternary('true', 'false') }}"
+        - name: SWIMTRACK_SCORE_THRESHOLD
+          value: "{{ tracker_score_threshold | float }}"
+        - name: SWIMTRACK_MIN_BOX_AREA
+          value: "{{ tracker_min_box_area | float }}"
+        - name: SWIMTRACK_TRACK_THRESHOLD
+          value: "{{ tracker_track_threshold | float }}"
+        - name: SWIMTRACK_TRACK_BUFFER
+          value: "{{ tracker_track_buffer | int }}"
+        - name: SWIMTRACK_MATCH_THRESHOLD
+          value: "{{ tracker_match_threshold | float }}"
+        - name: SWIMTRACK_MOT20
+          value: "{{ tracker_mot20 | bool | ternary('true', 'false') }}"
+
+    - name: Restart the AI user service for the tracker variant
+      ansible.builtin.systemd_service:
+        name: "{{ tracker_service_name }}"
+        scope: user
+        state: restarted
+      environment: "{{ tracker_systemd_environment }}"
+
+    - name: Wait for the configured AI service
+      ansible.builtin.uri:
+        url: "{{ tracker_ready_url }}"
+        method: GET
+        status_code: 200
+        return_content: true
+      register: tracker_ready
+      until: tracker_ready.status | default(0) == 200
+      retries: 60
+      delay: 2
+
+    - name: Require the configured TensorRT service
+      ansible.builtin.assert:
+        that:
+          - tracker_ready.json.status == 'ready'
+          - tracker_ready.json.backend == 'tensorrt'
+
+    - name: Report the active tracker experiment variant
+      ansible.builtin.debug:
+        msg:
+          variant_id: "{{ tracker_variant_id }}"
+          lane_roi_enabled: "{{ tracker_lane_roi_enabled }}"
+          score_threshold: "{{ tracker_score_threshold }}"
+          min_box_area: "{{ tracker_min_box_area }}"
+          track_threshold: "{{ tracker_track_threshold }}"
+          track_buffer: "{{ tracker_track_buffer }}"
+          match_threshold: "{{ tracker_match_threshold }}"
+          mot20: "{{ tracker_mot20 }}"
