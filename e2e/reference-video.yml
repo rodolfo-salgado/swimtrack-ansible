@@ -1,0 +1,71 @@
+schema_version: 1
+fixture:
+  source:
+    path: input_vids/20260513_201705_test01.mp4
+    sha256: c981fbadc43d11999ea63804699dc6edcc3ee4a9d9bd1d33ab73afe7a2457f1d
+    codec: h264
+    width: 1080
+    height: 1080
+    fps: 60
+    decoded_frame_count: 1441
+    duration_seconds: 24.016667
+  transform:
+    start_seconds: 0
+    duration_seconds: 2
+    fps: 10
+    output_fps_mode: cfr
+    video_track_timescale: 10
+    video_codec: libx264
+    preset: veryfast
+    crf: 28
+    audio: disabled
+  expected_fixture:
+    sha256: 77daac42ef272895733850f97d7262eae70b01a859d98404c703dea5d3c2642c
+    width: 1080
+    height: 1080
+    decoded_frame_count: 20
+    duration_seconds: 2
+    average_frame_rate: 10/1
+    time_base: 1/10
+contract_assertions:
+  http_status: 200
+  content_type_prefix: text/event-stream
+  error_event: absent
+  event_count: 20
+  frame_dimensions: [1080, 1080]
+  timestamp_start_seconds: 0
+  timestamp_step_seconds: 0.1
+  timestamp_tolerance_seconds: 0.02
+  boxes: finite_coordinates_in_frame_with_unique_ids_per_frame
+  count: exact_cumulative_union_of_seen_track_ids
+observations:
+  require_non_empty_boxes: false
+  fixed_track_ids: false
+  fixed_box_count: false
+  fixed_active_swimmer_count: false
+  expected_lap_count: null
+known_good_run:
+  status: pass
+  recorded_at: 2026-07-13T15:38:56-04:00
+  endpoint: http://127.0.0.1/swimtrack/api/detect
+  deployment:
+    front_revision: fe5a1b8991392afd0ee8a2da1bb867c55dd5a805
+    ai_revision: d72e91cc2939c92a69ac5ff44a9036faff5836f0
+    ai_gpu: 0
+  observed_sse_summary:
+    event_count: 20
+    first_time_seconds: 0
+    last_time_seconds: 1.9
+    frames_with_boxes: 17
+    max_boxes_per_frame: 1
+    unique_track_ids: 1
+    max_cumulative_track_count: 1
+    sample_track_ids: [1]
+  interpretation: These are observations of one deployed model run, not product acceptance criteria or lap counts.
+out_of_scope_until_product_definition:
+  - swimmer_or_lane_identity
+  - visibility_ground_truth
+  - bounding_box_ground_truth
+  - track_id_continuity_across_lost_detections
+  - lap_turn_event_definition
+  - expected_lap_count

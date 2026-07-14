@@ -1,0 +1,11 @@
+---
+- name: Exercise the published SwimTrack Front to AI video path
+  hosts: front_hosts
+  gather_facts: true
+  any_errors_fatal: true
+  serial: 1
+  tasks:
+    - name: Run the published video E2E test
+      ansible.builtin.include_role:
+        name: swimtrack_front
+        tasks_from: e2e
