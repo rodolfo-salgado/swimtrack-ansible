@@ -106,3 +106,14 @@ uv run --script scripts/evaluate_lap_events.py --threshold 0.20 --stream test01=
 ```
 
 `aggregate_primary.complete` sólo será `true` cuando el comando incluya `test01`–`test08`; el resultado de `test09` aparece en `aggregate_all`, pero no modifica las métricas primarias.
+
+### Recalcular lap scores sin GPU
+
+Un stream histórico ya contiene los timestamps, dimensiones y `boxes` inferidos por GPU. `replay_lap_scores.py` conserva esos datos y todas las demás claves de cada cuadro, reemplaza únicamente `lap_scores` mediante el `LapAnalyzer` de un checkout local de `swimtrack-ai` y genera otro stream SSE aceptado directamente por el evaluador. No ejecuta RT-DETRv2, TensorRT ni ByteTrack. Si el stream fue capturado con `tracking_diagnostics=boxes`, el replay también reconstruye el fallback de `trajectory-v4` a las detecciones dentro del ROI cuando ByteTrack no tiene un track activo; el nivel `counts` no contiene coordenadas suficientes para hacerlo.
+
+```bash
+uv run --script scripts/replay_lap_scores.py --stream ../results/test06/stream.sse --output ../results/test06/stream-trajectory-v4.sse --ai-source ../swimtrack-ai
+uv run --script scripts/evaluate_lap_events.py --threshold 0.20 --stream test06=../results/test06/stream-trajectory-v4.sse --output ../results/test06/evaluation-trajectory-v4.json
+```
+
+El replay infiere el `fps` desde la mediana de los deltas de `time`. Usa `--fps 60` si el stream tiene un solo cuadro o si se quiere fijar el valor explícitamente, y `--calibration-id` para seleccionar otra calibración soportada por el código AI indicado.
