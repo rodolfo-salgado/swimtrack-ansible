@@ -31,6 +31,12 @@ swimtrack_ai_track_buffer: 60
 swimtrack_ai_match_threshold: 0.80
 swimtrack_ai_mot20: false
 swimtrack_ai_lane_roi_enabled: true
+swimtrack_ai_far_crop_enabled: true
+swimtrack_ai_far_crop_left: 0.2962962963
+swimtrack_ai_far_crop_top: 0.1111111111
+swimtrack_ai_far_crop_right: 0.7037037037
+swimtrack_ai_far_crop_bottom: 0.5185185185
+swimtrack_ai_far_crop_nms_threshold: 0.50
 swimtrack_ai_workspace_gb: 4
 swimtrack_ai_minimum_free_kib: 8388608
 swimtrack_ai_ready_retries: 120
