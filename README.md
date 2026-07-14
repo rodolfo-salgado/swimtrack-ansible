@@ -97,7 +97,7 @@ El contrato de transporte y los resultados que se pueden exigir hoy están en `e
 
 `e2e/lap-ground-truth.yml` transcribe las anotaciones de `input_vids/TIMESTAMPS.md` para los nueve videos y fija sus checksums, metadatos, intervalos activos y eventos de vuelta. Los videos `test01`–`test08` forman el conjunto primario. `test09` se conserva como conjunto secundario porque tiene dos nadadores en el mismo carril y queda fuera del agregado primario.
 
-La anotación tiene una incertidumbre de ±1 s y una vuelta dura aproximadamente 2 s. Por eso cada vuelta se representa con un intervalo nominal de ±1 s y se acepta una predicción hasta ±2 s de su timestamp central: 1 s de media duración más 1 s de incertidumbre. Las predicciones sobre el threshold se deduplican en una ventana de 2 s y se asignan uno a uno por carril, maximizando TP y minimizando el error temporal absoluto. El evaluador informa TP, FP, FN, precision, recall y F1; no inventa TN para un problema de detección de eventos.
+La anotación tiene una incertidumbre de ±1 s y una vuelta dura aproximadamente 2 s. Por eso cada vuelta se representa con un intervalo nominal de ±1 s y se acepta una predicción hasta ±2 s de su timestamp central: 1 s de media duración más 1 s de incertidumbre. Las predicciones que incluyen `candidate_episode_id` se agrupan por visita física a la pared; los streams legacy sin ese campo se deduplican en una ventana de 2 s. Los eventos resultantes se asignan uno a uno por carril, maximizando TP y minimizando el error temporal absoluto. El evaluador informa TP, FP, FN, precision, recall y F1; no inventa TN para un problema de detección de eventos.
 
 Para evaluar uno o más streams con un threshold explícito:
 
@@ -107,13 +107,15 @@ uv run --script scripts/evaluate_lap_events.py --threshold 0.20 --stream test01=
 
 `aggregate_primary.complete` sólo será `true` cuando el comando incluya `test01`–`test08`; el resultado de `test09` aparece en `aggregate_all`, pero no modifica las métricas primarias.
 
+El ajuste realizado con estas anotaciones, la curva exploratoria de `trajectory-v5`, sus limitaciones y la validación live final están documentados en `e2e/lap-timestamp-report.md`.
+
 ### Recalcular lap scores sin GPU
 
-Un stream histórico ya contiene los timestamps, dimensiones y `boxes` inferidos por GPU. `replay_lap_scores.py` conserva esos datos y todas las demás claves de cada cuadro, reemplaza únicamente `lap_scores` mediante el `LapAnalyzer` de un checkout local de `swimtrack-ai` y genera otro stream SSE aceptado directamente por el evaluador. No ejecuta RT-DETRv2, TensorRT ni ByteTrack. Si el stream fue capturado con `tracking_diagnostics=boxes`, el replay también reconstruye el fallback de `trajectory-v4` a las detecciones dentro del ROI cuando ByteTrack no tiene un track activo; el nivel `counts` no contiene coordenadas suficientes para hacerlo.
+Un stream histórico ya contiene los timestamps, dimensiones y `boxes` inferidos por GPU. `replay_lap_scores.py` conserva esos datos y todas las demás claves de cada cuadro, reemplaza únicamente `lap_scores` mediante el `LapAnalyzer` de un checkout local de `swimtrack-ai` y genera otro stream SSE aceptado directamente por el evaluador. No ejecuta RT-DETRv2, TensorRT ni ByteTrack. Si el stream fue capturado con `tracking_diagnostics=boxes`, el replay también reconstruye el fallback de los scorers actuales a las detecciones dentro del ROI cuando ByteTrack no tiene un track activo; el nivel `counts` no contiene coordenadas suficientes para hacerlo.
 
 ```bash
-uv run --script scripts/replay_lap_scores.py --stream ../results/test06/stream.sse --output ../results/test06/stream-trajectory-v4.sse --ai-source ../swimtrack-ai
-uv run --script scripts/evaluate_lap_events.py --threshold 0.20 --stream test06=../results/test06/stream-trajectory-v4.sse --output ../results/test06/evaluation-trajectory-v4.json
+uv run --script scripts/replay_lap_scores.py --stream ../results/test06/stream.sse --output ../results/test06/stream-trajectory-v5.sse --ai-source ../swimtrack-ai
+uv run --script scripts/evaluate_lap_events.py --threshold 0.20 --stream test06=../results/test06/stream-trajectory-v5.sse --output ../results/test06/evaluation-trajectory-v5.json
 ```
 
 El replay infiere el `fps` desde la mediana de los deltas de `time`. Usa `--fps 60` si el stream tiene un solo cuadro o si se quiere fijar el valor explícitamente, y `--calibration-id` para seleccionar otra calibración soportada por el código AI indicado.
