@@ -6,15 +6,32 @@
   vars:
     local_worktree: "{{ playbook_dir }}/../../swimtrack-ai"
     remote_worktree: /home/grupo1/swimtrack/swimtrack-ai
+    environment_file: /home/grupo1/.config/swimtrack-ai/swimtrack-ai.env
     service_name: swimtrack-ai.service
     systemd_user_environment:
       XDG_RUNTIME_DIR: "/run/user/{{ ansible_facts['user_uid'] }}"
       DBUS_SESSION_BUS_ADDRESS: "unix:path=/run/user/{{ ansible_facts['user_uid'] }}/bus"
     runtime_files:
       - src/swimtrack_ai/api.py
+      - src/swimtrack_ai/calibration.py
+      - src/swimtrack_ai/config.py
+      - src/swimtrack_ai/detectors/__init__.py
+      - src/swimtrack_ai/detectors/base.py
+      - src/swimtrack_ai/detectors/fake.py
+      - src/swimtrack_ai/detectors/tensorrt.py
       - src/swimtrack_ai/lap_analysis.py
       - src/swimtrack_ai/schemas.py
       - src/swimtrack_ai/service.py
+      - src/swimtrack_ai/tracker.py
+    tracker_environment:
+      SWIMTRACK_DIAGNOSTIC_SCORE_FLOOR: "0.05"
+      SWIMTRACK_SCORE_THRESHOLD: "0.15"
+      SWIMTRACK_MIN_BOX_AREA: "150"
+      SWIMTRACK_TRACK_THRESHOLD: "0.35"
+      SWIMTRACK_TRACK_BUFFER: "90"
+      SWIMTRACK_MATCH_THRESHOLD: "0.80"
+      SWIMTRACK_MOT20: "false"
+      SWIMTRACK_LANE_ROI_ENABLED: "true"
   tasks:
     - name: Verify the local AI runtime files
       ansible.builtin.stat:
@@ -37,13 +54,24 @@
       loop: "{{ runtime_files }}"
       register: ai_overlay
 
+    - name: Configure the worktree tracker defaults
+      ansible.builtin.lineinfile:
+        path: "{{ environment_file }}"
+        regexp: "^{{ item.key }}="
+        line: "{{ item.key }}={{ item.value }}"
+        mode: "0600"
+      loop: "{{ tracker_environment | dict2items }}"
+      register: ai_tracker_environment
+
     - name: Restart the AI user service after an overlay change
       ansible.builtin.systemd_service:
         name: "{{ service_name }}"
         scope: user
         state: restarted
       environment: "{{ systemd_user_environment }}"
-      when: ai_overlay.results | selectattr('changed') | list | length > 0
+      when: >-
+        (ai_overlay.results | selectattr('changed') | list | length > 0)
+        or ai_tracker_environment.changed
 
     - name: Wait for the overlaid AI service
       ansible.builtin.uri:
@@ -70,6 +98,7 @@
     local_worktree: "{{ playbook_dir }}/../../swimtrack-front"
     remote_worktree: /home/grupo1/swimtrack/swimtrack-front
     environment_file: /home/grupo1/.config/swimtrack-front/swimtrack-front.env
+    tracking_diagnostics: counts
     service_name: swimtrack-front.service
     systemd_user_environment:
       XDG_RUNTIME_DIR: "/run/user/{{ ansible_facts['user_uid'] }}"
@@ -107,6 +136,14 @@
         mode: "0600"
       register: front_lap_environment
 
+    - name: Enable tracking diagnostics for worktree experiments
+      ansible.builtin.lineinfile:
+        path: "{{ environment_file }}"
+        regexp: '^VISION_TRACKING_DIAGNOSTICS='
+        line: "VISION_TRACKING_DIAGNOSTICS={{ tracking_diagnostics }}"
+        mode: "0600"
+      register: front_diagnostics_environment
+
     - name: Restart the Front user service after an overlay change
       ansible.builtin.systemd_service:
         name: "{{ service_name }}"
@@ -115,6 +152,7 @@
       environment: "{{ systemd_user_environment }}"
       when: >-
         front_lap_environment.changed
+        or front_diagnostics_environment.changed
         or (front_overlay.results | selectattr('changed') | list | length > 0)
 
     - name: Wait for the overlaid Front service

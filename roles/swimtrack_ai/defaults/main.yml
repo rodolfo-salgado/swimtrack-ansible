@@ -23,6 +23,14 @@ swimtrack_ai_bind_host: 127.0.0.1
 swimtrack_ai_port: 8001
 swimtrack_ai_gpu_index: 0
 swimtrack_ai_max_batch_frames: 8
+swimtrack_ai_diagnostic_score_floor: 0.05
+swimtrack_ai_score_threshold: 0.15
+swimtrack_ai_min_box_area: 150
+swimtrack_ai_track_threshold: 0.35
+swimtrack_ai_track_buffer: 90
+swimtrack_ai_match_threshold: 0.80
+swimtrack_ai_mot20: false
+swimtrack_ai_lane_roi_enabled: true
 swimtrack_ai_workspace_gb: 4
 swimtrack_ai_minimum_free_kib: 8388608
 swimtrack_ai_ready_retries: 120
