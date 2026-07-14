@@ -8,6 +8,12 @@
       - swimtrack_front_repository | length > 0
     fail_msg: "swimtrack_front_repository must be set to deploy the front checkout."
 
+- name: Validate the lap episode mode
+  ansible.builtin.assert:
+    that:
+      - swimtrack_front_lap_episode_mode in ['off', 'shadow']
+    fail_msg: "swimtrack_front_lap_episode_mode must be off or shadow."
+
 - name: Inspect the remote application directory
   ansible.builtin.stat:
     path: "{{ swimtrack_front_repo_dir }}"

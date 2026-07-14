@@ -99,12 +99,15 @@
     remote_worktree: /home/grupo1/swimtrack/swimtrack-front
     environment_file: /home/grupo1/.config/swimtrack-front/swimtrack-front.env
     tracking_diagnostics: counts
+    lap_episode_mode: shadow
     service_name: swimtrack-front.service
     systemd_user_environment:
       XDG_RUNTIME_DIR: "/run/user/{{ ansible_facts['user_uid'] }}"
       DBUS_SESSION_BUS_ADDRESS: "unix:path=/run/user/{{ ansible_facts['user_uid'] }}/bus"
     runtime_files:
+      - app.py
       - config.py
+      - lap_episode_reducer.py
       - remote_detector.py
   tasks:
     - name: Verify the local Front runtime files
@@ -144,6 +147,22 @@
         mode: "0600"
       register: front_diagnostics_environment
 
+    - name: Enable the shadow lap episode reducer
+      ansible.builtin.lineinfile:
+        path: "{{ environment_file }}"
+        regexp: '^LAP_EPISODE_MODE='
+        line: "LAP_EPISODE_MODE={{ lap_episode_mode }}"
+        mode: "0600"
+      register: front_lap_episode_environment
+
+    - name: Leave the lap confidence threshold unconfigured
+      ansible.builtin.lineinfile:
+        path: "{{ environment_file }}"
+        regexp: '^LAP_CONFIDENCE_THRESHOLD='
+        state: absent
+        mode: "0600"
+      register: front_lap_threshold_environment
+
     - name: Restart the Front user service after an overlay change
       ansible.builtin.systemd_service:
         name: "{{ service_name }}"
@@ -153,6 +172,8 @@
       when: >-
         front_lap_environment.changed
         or front_diagnostics_environment.changed
+        or front_lap_episode_environment.changed
+        or front_lap_threshold_environment.changed
         or (front_overlay.results | selectattr('changed') | list | length > 0)
 
     - name: Wait for the overlaid Front service
