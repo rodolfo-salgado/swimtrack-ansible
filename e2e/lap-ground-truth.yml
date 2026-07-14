@@ -1,0 +1,99 @@
+schema_version: 1
+
+source:
+  path: input_vids/TIMESTAMPS.md
+  sha256: 90cb9889296f9198110946d9d6b4d7a2da7cd9ec9aa9fac809efef2a2c7160bd
+  annotation_language: es
+
+temporal_evaluation:
+  timestamp_uncertainty_ms: 1000
+  turn_duration_ms: 2000
+  match_tolerance_ms: 2000
+  prediction_deduplication_ms: 2000
+  matching_policy: one_to_one_minimum_absolute_error
+  primary_video_ids: [test01, test02, test03, test04, test05, test06, test07, test08]
+  secondary_video_ids: [test09]
+
+videos:
+  - id: test01
+    file: 20260513_201705_test01.mp4
+    source_sha256: c981fbadc43d11999ea63804699dc6edcc3ee4a9d9bd1d33ab73afe7a2457f1d
+    media: {width: 1080, height: 1080, fps: 60, frame_count: 1441, duration_ms: 24016.667}
+    evaluation_tier: primary
+    subjects:
+      - {id: swimmer_1, lane_id: center, start_ms: 1500, end_ms: 21000}
+    turn_events: []
+  - id: test02
+    file: 20260513_201705_test02.mp4
+    source_sha256: 3cf55de953f8ab44bfc91e11346597745e74e67336029258f6eb0270d6e783d7
+    media: {width: 1080, height: 1080, fps: 60, frame_count: 1501, duration_ms: 25016.667}
+    evaluation_tier: primary
+    subjects:
+      - {id: swimmer_1, lane_id: center, start_ms: 3000, end_ms: 25000}
+    turn_events: []
+  - id: test03
+    file: 20260513_201705_test03.mp4
+    source_sha256: 44f0b4b210399642f5b312242f80c1e7907e43d0fbfe283715011cabbc8d336a
+    media: {width: 1080, height: 1080, fps: 60, frame_count: 1321, duration_ms: 22016.667}
+    evaluation_tier: primary
+    subjects:
+      - {id: swimmer_1, lane_id: center, start_ms: 2500, end_ms: 21500}
+    turn_events: []
+  - id: test04
+    file: 20260513_201705_test04.mp4
+    source_sha256: 5b6ff2efab7adcf10e2a7bfb86a07685c9b63776d66cf68d4d774153e729db70
+    media: {width: 1080, height: 1080, fps: 60, frame_count: 3601, duration_ms: 60016.667}
+    evaluation_tier: primary
+    subjects:
+      - {id: swimmer_1, lane_id: center, start_ms: 5000, end_ms: 58000}
+    turn_events:
+      - {id: turn_1, subject_id: swimmer_1, lane_id: center, timestamp_ms: 30000}
+  - id: test05
+    file: 20260513_201705_test05.mp4
+    source_sha256: 89ff402db5e3ac533c8d9a68bc8b27484e37c99093724969d52b50fe0f03e1f1
+    media: {width: 1080, height: 1080, fps: 60, frame_count: 3001, duration_ms: 50016.667}
+    evaluation_tier: primary
+    subjects:
+      - {id: swimmer_1, lane_id: center, start_ms: 3500, end_ms: 48500}
+    turn_events:
+      - {id: turn_1, subject_id: swimmer_1, lane_id: center, timestamp_ms: 25000}
+  - id: test06
+    file: 20260513_201705_test06.mp4
+    source_sha256: 7e7f7c657b5daaebd91793a329d43405e9048512242cfffdfafaba3d51744305
+    media: {width: 1080, height: 1080, fps: 60, frame_count: 2701, duration_ms: 45016.667}
+    evaluation_tier: primary
+    subjects:
+      - {id: swimmer_1, lane_id: center, start_ms: 0, end_ms: 43000}
+    turn_events:
+      - {id: turn_1, subject_id: swimmer_1, lane_id: center, timestamp_ms: 19000}
+  - id: test07
+    file: 20260513_201705_test07.mp4
+    source_sha256: 10df9b5dc5c10e4e1bb84af6d8e905e81189a0d5a9b21131c5345d474f7328ef
+    media: {width: 1080, height: 1080, fps: 60, frame_count: 3541, duration_ms: 59016.667}
+    evaluation_tier: primary
+    subjects:
+      - {id: swimmer_1, lane_id: center, start_ms: 2000, end_ms: 56000}
+    turn_events:
+      - {id: turn_1, subject_id: swimmer_1, lane_id: center, timestamp_ms: 27000}
+  - id: test08
+    file: 20260513_201705_test08.mp4
+    source_sha256: 4704d6e12d93640dd4cd3d5f35dcbcfcbee685841f02a9cdaff7788bcfd3abbf
+    media: {width: 1080, height: 1080, fps: 60, frame_count: 4322, duration_ms: 72033.333}
+    evaluation_tier: primary
+    subjects:
+      - {id: swimmer_1, lane_id: center, start_ms: 2500, end_ms: 70000}
+    turn_events:
+      - {id: turn_1, subject_id: swimmer_1, lane_id: center, timestamp_ms: 24000}
+      - {id: turn_2, subject_id: swimmer_1, lane_id: center, timestamp_ms: 47000}
+  - id: test09
+    file: 20260513_201705_test09.mp4
+    source_sha256: a206c4fc7ab7c28afa30845915dc170d7712043400e238096fdfc021c139d189
+    media: {width: 1080, height: 1080, fps: 60, frame_count: 3361, duration_ms: 56016.667}
+    evaluation_tier: secondary
+    primary_exclusion_reason: Two swimmers share one lane and approach from opposite ends; the current one-swimmer-per-lane model cannot assign identities reliably.
+    subjects:
+      - {id: swimmer_1, lane_id: center, start_ms: 3000, end_ms: 50000}
+      - {id: swimmer_2, lane_id: center, start_ms: 3000, end_ms: 54000}
+    turn_events:
+      - {id: turn_1, subject_id: swimmer_1, lane_id: center, timestamp_ms: 26000}
+      - {id: turn_2, subject_id: swimmer_2, lane_id: center, timestamp_ms: 27000}

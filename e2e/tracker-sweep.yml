@@ -19,7 +19,7 @@ videos:
     fps: 60
     ground_truth:
       label: no_lap
-      status: provisional_visual
+      status: annotated
       turn_times_ms: []
   - id: test06
     video_stem: 20260513_201705_test06
@@ -30,9 +30,9 @@ videos:
     fps: 60
     ground_truth:
       label: lap
-      status: provisional_visual
-      turn_times_ms: [18100]
-      tolerance_ms: 1500
+      status: annotated
+      turn_times_ms: [19000]
+      tolerance_ms: 2000
 
 variants:
   - id: legacy_default

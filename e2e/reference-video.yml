@@ -43,7 +43,7 @@ observations:
   fixed_track_ids: false
   fixed_box_count: false
   fixed_active_swimmer_count: false
-  expected_lap_count: null
+  expected_lap_count: 0
 known_good_run:
   status: pass
   recorded_at: 2026-07-13T15:38:56-04:00
@@ -67,5 +67,3 @@ out_of_scope_until_product_definition:
   - visibility_ground_truth
   - bounding_box_ground_truth
   - track_id_continuity_across_lost_detections
-  - lap_turn_event_definition
-  - expected_lap_count

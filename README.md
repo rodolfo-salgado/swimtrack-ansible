@@ -91,4 +91,18 @@ La prueba E2E genera temporalmente un clip de dos segundos y 20 frames desde `in
 ./ansible-run ansible-playbook playbooks/e2e-front.yml
 ```
 
-El contrato y los resultados que se pueden exigir hoy están en `e2e/reference-video.yml`. La prueba exige transporte, SSE, un evento por frame, timestamps, dimensiones, cajas válidas y el conteo acumulado de IDs. No exige aún cantidad de nadadores, cajas no vacías, IDs concretos ni vueltas: faltan ground truth, identidad/carril y la definición de producto de una vuelta. `known_good_run` conserva una observación aprobada de la primera corrida real sin convertirla en una regla de producto prematuramente.
+El contrato de transporte y los resultados que se pueden exigir hoy están en `e2e/reference-video.yml`. La prueba exige SSE, un evento por frame, timestamps, dimensiones, cajas válidas y el conteo acumulado de IDs. No exige aún cantidad de nadadores, cajas no vacías ni IDs concretos. `known_good_run` conserva una observación aprobada de la primera corrida real sin convertirla en una regla de producto prematuramente.
+
+## Evaluación temporal de vueltas
+
+`e2e/lap-ground-truth.yml` transcribe las anotaciones de `input_vids/TIMESTAMPS.md` para los nueve videos y fija sus checksums, metadatos, intervalos activos y eventos de vuelta. Los videos `test01`–`test08` forman el conjunto primario. `test09` se conserva como conjunto secundario porque tiene dos nadadores en el mismo carril y queda fuera del agregado primario.
+
+La anotación tiene una incertidumbre de ±1 s y una vuelta dura aproximadamente 2 s. Por eso cada vuelta se representa con un intervalo nominal de ±1 s y se acepta una predicción hasta ±2 s de su timestamp central: 1 s de media duración más 1 s de incertidumbre. Las predicciones sobre el threshold se deduplican en una ventana de 2 s y se asignan uno a uno por carril, maximizando TP y minimizando el error temporal absoluto. El evaluador informa TP, FP, FN, precision, recall y F1; no inventa TN para un problema de detección de eventos.
+
+Para evaluar uno o más streams con un threshold explícito:
+
+```bash
+uv run --script scripts/evaluate_lap_events.py --threshold 0.20 --stream test01=../results/test01/stream.sse --stream test06=../results/test06/stream.sse --output ../results/lap-events-020.json
+```
+
+`aggregate_primary.complete` sólo será `true` cuando el comando incluya `test01`–`test08`; el resultado de `test09` aparece en `aggregate_all`, pero no modifica las métricas primarias.

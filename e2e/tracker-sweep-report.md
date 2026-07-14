@@ -1,5 +1,7 @@
 # Tracker sweep `tracker-v1`
 
+> Este reporte conserva el criterio provisional utilizado durante el run histórico. El manifiesto formal `lap-ground-truth.yml`, creado después, reemplaza el timestamp de `test06` por la anotación fuente de `19,0 s` y usa una tolerancia de ±2 s.
+
 ## Método
 
 El sweep procesó secuencialmente los videos completos `test01` (`no_lap`) y `test06` (`lap`) con nueve configuraciones de detector, ROI y ByteTrack sobre el mismo despliegue Front → AI en GPU 0. La anotación de producto es provisional: `test01` no contiene giro y el giro de `test06` se fijó visualmente en `18,1 s`, con tolerancia de `1,5 s`. Todos los runs conservaron diagnostics en el 100 % de los frames. La ejecución comenzó el 14 de julio de 2026 a las 00:40 UTC y terminó a las 01:21 UTC.
