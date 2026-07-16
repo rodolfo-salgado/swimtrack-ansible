@@ -96,106 +96,89 @@
           - ai_ready.json.status == 'ready'
           - ai_ready.json.backend == 'tensorrt'
 
-- name: Deploy the local SwimTrack Front worktree overlay
+- name: Validate the local SwimTrack Front release checkout and deploy the configured revision
   hosts: front_hosts
   gather_facts: true
   any_errors_fatal: true
   vars:
     local_worktree: "{{ playbook_dir }}/../../swimtrack-front"
-    remote_worktree: /home/grupo1/swimtrack/swimtrack-front
-    environment_file: /home/grupo1/.config/swimtrack-front/swimtrack-front.env
-    tracking_diagnostics: counts
-    lap_episode_mode: shadow
-    service_name: swimtrack-front.service
-    systemd_user_environment:
-      XDG_RUNTIME_DIR: "/run/user/{{ ansible_facts['user_uid'] }}"
-      DBUS_SESSION_BUS_ADDRESS: "unix:path=/run/user/{{ ansible_facts['user_uid'] }}/bus"
-    runtime_files:
-      - app.py
-      - config.py
-      - lap_episode_reducer.py
-      - remote_detector.py
+    local_front_expected_branch: main
   tasks:
-    - name: Verify the local Front runtime files
-      ansible.builtin.stat:
-        path: "{{ local_worktree }}/{{ item }}"
-      loop: "{{ runtime_files }}"
-      register: local_front_files
+    - name: Read the local Front revision
+      ansible.builtin.command:
+        argv:
+          - git
+          - -C
+          - "{{ local_worktree }}"
+          - rev-parse
+          - HEAD
+      register: local_front_revision
       delegate_to: localhost
+      changed_when: false
 
-    - name: Require every local Front runtime file
+    - name: Read the local Front branch
+      ansible.builtin.command:
+        argv:
+          - git
+          - -C
+          - "{{ local_worktree }}"
+          - branch
+          - --show-current
+      register: local_front_branch
+      delegate_to: localhost
+      changed_when: false
+
+    - name: Inspect the local Front worktree
+      ansible.builtin.command:
+        argv:
+          - git
+          - -C
+          - "{{ local_worktree }}"
+          - status
+          - --porcelain
+      register: local_front_status
+      delegate_to: localhost
+      changed_when: false
+
+    - name: Require a clean local Front main worktree
       ansible.builtin.assert:
         that:
-          - local_front_files.results | map(attribute='stat.exists') | min
-          - local_front_files.results | map(attribute='stat.isreg') | min
+          - local_front_branch.stdout | trim == local_front_expected_branch
+          - local_front_status.stdout | trim == ''
+        fail_msg: >-
+          The local Front worktree must be clean and checked out on
+          {{ local_front_expected_branch }} before deployment.
+      delegate_to: localhost
 
-    - name: Copy the local Front runtime overlay
-      ansible.builtin.copy:
-        src: "{{ local_worktree }}/{{ item }}"
-        dest: "{{ remote_worktree }}/{{ item }}"
-        mode: "0644"
-      loop: "{{ runtime_files }}"
-      register: front_overlay
+    - name: Read the published Front main revision
+      ansible.builtin.command:
+        argv:
+          - git
+          - -C
+          - "{{ local_worktree }}"
+          - ls-remote
+          - --exit-code
+          - origin
+          - "refs/heads/{{ local_front_expected_branch }}"
+      register: published_front_ref
+      delegate_to: localhost
+      changed_when: false
 
-    - name: Enable the fixed-camera lap calibration
-      ansible.builtin.lineinfile:
-        path: "{{ environment_file }}"
-        regexp: '^VISION_LAP_CALIBRATION_ID='
-        line: VISION_LAP_CALIBRATION_ID=fixed-camera-v1
-        mode: "0600"
-      register: front_lap_environment
+    - name: Extract the published Front revision
+      ansible.builtin.set_fact:
+        published_front_revision: "{{ published_front_ref.stdout | regex_search('^[0-9a-f]{40}') }}"
 
-    - name: Enable tracking diagnostics for worktree experiments
-      ansible.builtin.lineinfile:
-        path: "{{ environment_file }}"
-        regexp: '^VISION_TRACKING_DIAGNOSTICS='
-        line: "VISION_TRACKING_DIAGNOSTICS={{ tracking_diagnostics }}"
-        mode: "0600"
-      register: front_diagnostics_environment
+    - name: Require the local Front revision to match the configured release
+      ansible.builtin.assert:
+        that:
+          - published_front_revision == (local_front_revision.stdout | trim)
+          - swimtrack_front_revision == (local_front_revision.stdout | trim)
+        fail_msg: >-
+          The local Front HEAD must be the published tip of
+          origin/{{ local_front_expected_branch }} and match swimtrack_front_revision.
+          Update inventory/group_vars/front_hosts.yml with the published commit before deployment.
+      delegate_to: localhost
 
-    - name: Enable the shadow lap episode reducer
-      ansible.builtin.lineinfile:
-        path: "{{ environment_file }}"
-        regexp: '^LAP_EPISODE_MODE='
-        line: "LAP_EPISODE_MODE={{ lap_episode_mode }}"
-        mode: "0600"
-      register: front_lap_episode_environment
-
-    - name: Leave the lap confidence threshold unconfigured
-      ansible.builtin.lineinfile:
-        path: "{{ environment_file }}"
-        regexp: '^LAP_CONFIDENCE_THRESHOLD='
-        state: absent
-        mode: "0600"
-      register: front_lap_threshold_environment
-
-    - name: Restart the Front user service after an overlay change
-      ansible.builtin.systemd_service:
-        name: "{{ service_name }}"
-        scope: user
-        state: restarted
-      environment: "{{ systemd_user_environment }}"
-      when: >-
-        front_lap_environment.changed
-        or front_diagnostics_environment.changed
-        or front_lap_episode_environment.changed
-        or front_lap_threshold_environment.changed
-        or (front_overlay.results | selectattr('changed') | list | length > 0)
-
-    - name: Wait for the overlaid Front service
-      ansible.builtin.uri:
-        url: http://127.0.0.1:7101/swimtrack/
-        method: GET
-        status_code: 200
-        return_content: false
-      register: front_ready
-      until: front_ready.status | default(0) == 200
-      retries: 30
-      delay: 2
-
-    - name: Verify the Apache publication after the overlay
-      ansible.builtin.uri:
-        url: http://127.0.0.1/swimtrack/
-        method: GET
-        status_code: 200
-        return_content: false
+    - name: Deploy the configured Front revision through the standard role
+      ansible.builtin.include_role:
+        name: swimtrack_front

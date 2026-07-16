@@ -70,6 +70,8 @@ El playbook del front fija una revisión publicada de `swimtrack-front`, crea un
 ./ansible-run ansible-playbook playbooks/smoke-front.yml
 ```
 
+`swimtrack_front_revision` es el único pin inmutable de release del Front. Actualízalo a un commit publicado en `inventory/group_vars/front_hosts.yml` antes de desplegar; `deploy-front.yml` hace checkout de ese commit. `deploy-worktree.yml` ya no copia archivos fuente locales al checkout remoto: valida que el checkout local limpio de `main` sea el commit publicado configurado por ese pin y después invoca el mismo rol estándar.
+
 El servicio se prepara con `URL_PREFIX=/swimtrack/`. Para publicarlo, ejecuta el playbook dedicado. Actualiza el único mapeo existente de `/swimtrack/` en el VirtualHost activo, valida Apache antes de recargarlo y no agrega otro sitio ni un `ProxyPass` duplicado. El host ya concede a `grupo1` `sudo` sin contraseña para esta operación específica.
 
 ```bash
