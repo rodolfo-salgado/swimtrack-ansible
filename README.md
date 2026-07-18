@@ -93,6 +93,16 @@ La prueba E2E genera temporalmente un clip de dos segundos y 20 frames desde `in
 ./ansible-run ansible-playbook playbooks/e2e-front.yml
 ```
 
+## Regresión visual de navegador
+
+La suite Playwright de `../swimtrack-front/tests/e2e/` abre la UI publicada en Chromium, carga una fixture MP4 corta y comprueba las cajas del canvas durante dos loops. Intercepta únicamente `POST /api/detect` con un SSE determinista, de modo que detecta regresiones de video, canvas y sincronización sin hacer la inferencia de GPU parte de una prueba visual. La prueba `e2e-front.yml` conserva la validación independiente de Apache → Front → AI → SSE real.
+
+```bash
+./ansible-run ansible-playbook playbooks/e2e-front-browser.yml
+```
+
+El playbook ejecuta el browser en el controller contra `http://10.0.218.111/swimtrack/`, instala las dependencias fijadas y Chromium cuando hace falta, y conserva los artefactos de fallo de Playwright en `swimtrack-front/test-results/`.
+
 El contrato de transporte y los resultados que se pueden exigir hoy están en `e2e/reference-video.yml`. La prueba exige SSE, un evento por frame, timestamps, dimensiones, cajas válidas y el conteo acumulado de IDs. No exige aún cantidad de nadadores, cajas no vacías ni IDs concretos. `known_good_run` conserva una observación aprobada de la primera corrida real sin convertirla en una regla de producto prematuramente.
 
 ## Evaluación temporal de vueltas

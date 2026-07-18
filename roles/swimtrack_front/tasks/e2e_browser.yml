@@ -1,0 +1,71 @@
+---
+- name: Run the published browser regression suite from the controller
+  block:
+    - name: Require a configured public URL for browser E2E
+      ansible.builtin.assert:
+        that:
+          - swimtrack_front_browser_e2e_base_url | length > 0
+        fail_msg: "Configure swimtrack_front_browser_e2e_base_url with the published Front URL."
+      delegate_to: localhost
+      run_once: true
+
+    - name: Verify the local browser E2E source tree
+      ansible.builtin.stat:
+        path: "{{ swimtrack_front_browser_e2e_source_dir }}/package.json"
+      register: swimtrack_front_browser_e2e_package
+      delegate_to: localhost
+      run_once: true
+
+    - name: Require the Playwright package manifest
+      ansible.builtin.assert:
+        that:
+          - swimtrack_front_browser_e2e_package.stat.exists
+          - swimtrack_front_browser_e2e_package.stat.isreg
+        fail_msg: "The browser E2E source tree must contain swimtrack-front/package.json."
+      delegate_to: localhost
+      run_once: true
+
+    - name: Install pinned browser E2E dependencies
+      ansible.builtin.command:
+        argv:
+          - npm
+          - install
+          - --ignore-scripts
+          - --no-audit
+          - --no-fund
+      args:
+        chdir: "{{ swimtrack_front_browser_e2e_source_dir }}"
+      when: swimtrack_front_browser_e2e_install_dependencies | bool
+      delegate_to: localhost
+      run_once: true
+      changed_when: false
+
+    - name: Install the Playwright Chromium browser
+      ansible.builtin.command:
+        argv:
+          - npm
+          - exec
+          - --
+          - playwright
+          - install
+          - chromium
+      args:
+        chdir: "{{ swimtrack_front_browser_e2e_source_dir }}"
+      when: swimtrack_front_browser_e2e_install_browser | bool
+      delegate_to: localhost
+      run_once: true
+      changed_when: false
+
+    - name: Exercise the published UI with the browser regression suite
+      ansible.builtin.command:
+        argv:
+          - npm
+          - run
+          - test:e2e
+      args:
+        chdir: "{{ swimtrack_front_browser_e2e_source_dir }}"
+      environment:
+        SWIMTRACK_E2E_BASE_URL: "{{ swimtrack_front_browser_e2e_base_url }}"
+      delegate_to: localhost
+      run_once: true
+      changed_when: false
