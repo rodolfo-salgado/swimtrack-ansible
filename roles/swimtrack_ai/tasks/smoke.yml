@@ -53,6 +53,12 @@
           - swimtrack_smoke_session.json.tracking_configuration.match_threshold | float == swimtrack_ai_match_threshold | float
           - swimtrack_smoke_session.json.tracking_configuration.mot20 | bool == swimtrack_ai_mot20 | bool
           - swimtrack_smoke_session.json.tracking_configuration.lane_roi_enabled | bool == swimtrack_ai_lane_roi_enabled | bool
+          - swimtrack_smoke_session.json.tracking_configuration.weak_reactivation_enabled | bool == swimtrack_ai_weak_reactivation_enabled | bool
+          - swimtrack_smoke_session.json.tracking_configuration.weak_reactivation_score_threshold | float == swimtrack_ai_weak_reactivation_score_threshold | float
+          - swimtrack_smoke_session.json.tracking_configuration.weak_reactivation_min_box_area | float == swimtrack_ai_weak_reactivation_min_box_area | float
+          - swimtrack_smoke_session.json.tracking_configuration.weak_reactivation_max_gap_frames | int == (60.0 * (swimtrack_ai_weak_reactivation_max_gap_seconds | float)) | round | int
+          - swimtrack_smoke_session.json.tracking_configuration.weak_reactivation_max_gap_seconds | float == swimtrack_ai_weak_reactivation_max_gap_seconds | float
+          - swimtrack_smoke_session.json.tracking_configuration.weak_reactivation_max_center_distance | float == swimtrack_ai_weak_reactivation_max_center_distance | float
           - swimtrack_smoke_session.json.tracking_configuration.far_crop_enabled | bool == swimtrack_ai_far_crop_enabled | bool
           - swimtrack_smoke_session.json.tracking_configuration.far_crop_box | length == 4
           - swimtrack_smoke_session.json.tracking_configuration.far_crop_nms_threshold | float == swimtrack_ai_far_crop_nms_threshold | float

@@ -8,6 +8,11 @@ restore_defaults:
   track_buffer: 60
   match_threshold: 0.80
   mot20: false
+  weak_reactivation_enabled: true
+  weak_reactivation_score_threshold: 0.10
+  weak_reactivation_min_box_area: 64
+  weak_reactivation_max_gap_seconds: 1.0
+  weak_reactivation_max_center_distance: 0.10
 
 videos:
   - id: test01
@@ -44,6 +49,11 @@ variants:
     track_buffer: 60
     match_threshold: 0.80
     mot20: false
+    weak_reactivation_enabled: false
+    weak_reactivation_score_threshold: 0.10
+    weak_reactivation_min_box_area: 64
+    weak_reactivation_max_gap_seconds: 1.0
+    weak_reactivation_max_center_distance: 0.10
   - id: roi_legacy
     description: Isolate lane routing while retaining the original thresholds.
     lane_roi_enabled: true
@@ -53,6 +63,11 @@ variants:
     track_buffer: 60
     match_threshold: 0.80
     mot20: false
+    weak_reactivation_enabled: false
+    weak_reactivation_score_threshold: 0.10
+    weak_reactivation_min_box_area: 64
+    weak_reactivation_max_gap_seconds: 1.0
+    weak_reactivation_max_center_distance: 0.10
   - id: score_020
     description: Admit more low-confidence detections after lane routing.
     lane_roi_enabled: true
@@ -62,6 +77,11 @@ variants:
     track_buffer: 60
     match_threshold: 0.80
     mot20: false
+    weak_reactivation_enabled: false
+    weak_reactivation_score_threshold: 0.10
+    weak_reactivation_min_box_area: 64
+    weak_reactivation_max_gap_seconds: 1.0
+    weak_reactivation_max_center_distance: 0.10
   - id: score_015
     description: Extend ByteTrack's low-confidence association range.
     lane_roi_enabled: true
@@ -71,6 +91,11 @@ variants:
     track_buffer: 60
     match_threshold: 0.80
     mot20: false
+    weak_reactivation_enabled: false
+    weak_reactivation_score_threshold: 0.10
+    weak_reactivation_min_box_area: 64
+    weak_reactivation_max_gap_seconds: 1.0
+    weak_reactivation_max_center_distance: 0.10
   - id: area_250
     description: Retain smaller far-end swimmers at score threshold 0.15.
     lane_roi_enabled: true
@@ -80,6 +105,39 @@ variants:
     track_buffer: 60
     match_threshold: 0.80
     mot20: false
+    weak_reactivation_enabled: false
+    weak_reactivation_score_threshold: 0.10
+    weak_reactivation_min_box_area: 64
+    weak_reactivation_max_gap_seconds: 1.0
+    weak_reactivation_max_center_distance: 0.10
+  - id: weak_reactivation_off
+    description: Isolated control at the selected far-end baseline without weak-candidate reactivation.
+    lane_roi_enabled: true
+    score_threshold: 0.15
+    min_box_area: 250
+    track_threshold: 0.45
+    track_buffer: 60
+    match_threshold: 0.80
+    mot20: false
+    weak_reactivation_enabled: false
+    weak_reactivation_score_threshold: 0.10
+    weak_reactivation_min_box_area: 64
+    weak_reactivation_max_gap_seconds: 1.0
+    weak_reactivation_max_center_distance: 0.10
+  - id: weak_reactivation_default
+    description: Isolated proposed weak-candidate reactivation at the selected far-end baseline.
+    lane_roi_enabled: true
+    score_threshold: 0.15
+    min_box_area: 250
+    track_threshold: 0.45
+    track_buffer: 60
+    match_threshold: 0.80
+    mot20: false
+    weak_reactivation_enabled: true
+    weak_reactivation_score_threshold: 0.10
+    weak_reactivation_min_box_area: 64
+    weak_reactivation_max_gap_seconds: 1.0
+    weak_reactivation_max_center_distance: 0.10
   - id: area_150
     description: Use the proposed minimum far-end box area.
     lane_roi_enabled: true
@@ -89,6 +147,11 @@ variants:
     track_buffer: 60
     match_threshold: 0.80
     mot20: false
+    weak_reactivation_enabled: false
+    weak_reactivation_score_threshold: 0.10
+    weak_reactivation_min_box_area: 64
+    weak_reactivation_max_gap_seconds: 1.0
+    weak_reactivation_max_center_distance: 0.10
   - id: track_035
     description: Lower ByteTrack's high-confidence and new-track gates.
     lane_roi_enabled: true
@@ -98,6 +161,11 @@ variants:
     track_buffer: 60
     match_threshold: 0.80
     mot20: false
+    weak_reactivation_enabled: false
+    weak_reactivation_score_threshold: 0.10
+    weak_reactivation_min_box_area: 64
+    weak_reactivation_max_gap_seconds: 1.0
+    weak_reactivation_max_center_distance: 0.10
   - id: buffer_090
     description: Preserve lost lane tracks for a longer occlusion window.
     lane_roi_enabled: true
@@ -107,6 +175,11 @@ variants:
     track_buffer: 90
     match_threshold: 0.80
     mot20: false
+    weak_reactivation_enabled: false
+    weak_reactivation_score_threshold: 0.10
+    weak_reactivation_min_box_area: 64
+    weak_reactivation_max_gap_seconds: 1.0
+    weak_reactivation_max_center_distance: 0.10
   - id: match_090
     description: Test more permissive first-stage IoU association inside the lane.
     lane_roi_enabled: true
@@ -116,3 +189,8 @@ variants:
     track_buffer: 90
     match_threshold: 0.90
     mot20: false
+    weak_reactivation_enabled: false
+    weak_reactivation_score_threshold: 0.10
+    weak_reactivation_min_box_area: 64
+    weak_reactivation_max_gap_seconds: 1.0
+    weak_reactivation_max_center_distance: 0.10

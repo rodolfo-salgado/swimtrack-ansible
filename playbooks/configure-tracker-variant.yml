@@ -23,10 +23,19 @@
           - tracker_track_buffer is defined
           - tracker_match_threshold is defined
           - tracker_mot20 is defined
+          - tracker_weak_reactivation_enabled is defined
+          - tracker_weak_reactivation_score_threshold is defined
+          - tracker_weak_reactivation_min_box_area is defined
+          - tracker_weak_reactivation_max_gap_seconds is defined
+          - tracker_weak_reactivation_max_center_distance is defined
         fail_msg: >-
           Pass tracker_lane_roi_enabled, tracker_score_threshold,
           tracker_min_box_area, tracker_track_threshold, tracker_track_buffer,
-          tracker_match_threshold and tracker_mot20 as extra vars.
+          tracker_match_threshold, tracker_mot20, tracker_weak_reactivation_enabled,
+          tracker_weak_reactivation_score_threshold,
+          tracker_weak_reactivation_min_box_area,
+          tracker_weak_reactivation_max_gap_seconds and
+          tracker_weak_reactivation_max_center_distance as extra vars.
 
     - name: Validate the tracker experiment values
       ansible.builtin.assert:
@@ -53,10 +62,27 @@
           - tracker_match_threshold | float >= 0.0
           - tracker_match_threshold | float <= 1.0
           - tracker_mot20 is boolean
+          - tracker_weak_reactivation_enabled is boolean
+          - tracker_weak_reactivation_score_threshold is number
+          - tracker_weak_reactivation_score_threshold is not boolean
+          - tracker_weak_reactivation_score_threshold | float >= 0.05
+          - tracker_weak_reactivation_score_threshold | float < tracker_score_threshold | float
+          - tracker_weak_reactivation_score_threshold | float < tracker_track_threshold | float
+          - tracker_weak_reactivation_min_box_area is number
+          - tracker_weak_reactivation_min_box_area is not boolean
+          - tracker_weak_reactivation_min_box_area | float >= 0.0
+          - tracker_weak_reactivation_max_gap_seconds is number
+          - tracker_weak_reactivation_max_gap_seconds is not boolean
+          - tracker_weak_reactivation_max_gap_seconds | float > 0.0
+          - tracker_weak_reactivation_max_center_distance is number
+          - tracker_weak_reactivation_max_center_distance is not boolean
+          - tracker_weak_reactivation_max_center_distance | float > 0.0
+          - tracker_weak_reactivation_max_center_distance | float <= 1.0
         fail_msg: >-
           Tracker values must use JSON booleans/numbers, thresholds must be in
           their valid ranges, score_threshold must be at least the diagnostic
-          floor 0.05, and track_buffer must be a positive integer.
+          floor 0.05, weak reactivation must stay below ordinary detection
+          thresholds, and track_buffer must be a positive integer.
 
     - name: Install the tracker experiment values
       ansible.builtin.lineinfile:
@@ -79,6 +105,16 @@
           value: "{{ tracker_match_threshold | float }}"
         - name: SWIMTRACK_MOT20
           value: "{{ tracker_mot20 | bool | ternary('true', 'false') }}"
+        - name: SWIMTRACK_WEAK_REACTIVATION_ENABLED
+          value: "{{ tracker_weak_reactivation_enabled | bool | ternary('true', 'false') }}"
+        - name: SWIMTRACK_WEAK_REACTIVATION_SCORE_THRESHOLD
+          value: "{{ tracker_weak_reactivation_score_threshold | float }}"
+        - name: SWIMTRACK_WEAK_REACTIVATION_MIN_BOX_AREA
+          value: "{{ tracker_weak_reactivation_min_box_area | float }}"
+        - name: SWIMTRACK_WEAK_REACTIVATION_MAX_GAP_SECONDS
+          value: "{{ tracker_weak_reactivation_max_gap_seconds | float }}"
+        - name: SWIMTRACK_WEAK_REACTIVATION_MAX_CENTER_DISTANCE
+          value: "{{ tracker_weak_reactivation_max_center_distance | float }}"
 
     - name: Restart the AI user service for the tracker variant
       ansible.builtin.systemd_service:
@@ -115,3 +151,8 @@
           track_buffer: "{{ tracker_track_buffer }}"
           match_threshold: "{{ tracker_match_threshold }}"
           mot20: "{{ tracker_mot20 }}"
+          weak_reactivation_enabled: "{{ tracker_weak_reactivation_enabled }}"
+          weak_reactivation_score_threshold: "{{ tracker_weak_reactivation_score_threshold }}"
+          weak_reactivation_min_box_area: "{{ tracker_weak_reactivation_min_box_area }}"
+          weak_reactivation_max_gap_seconds: "{{ tracker_weak_reactivation_max_gap_seconds }}"
+          weak_reactivation_max_center_distance: "{{ tracker_weak_reactivation_max_center_distance }}"

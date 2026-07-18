@@ -298,12 +298,16 @@ def summarize(messages: list[dict[str, Any]], expected_turns_ms: list[float]) ->
     diagnostic_floors: set[float] = set()
     candidate_counts: list[int] = []
     accepted_counts: list[int] = []
+    weak_candidate_counts: list[int] = []
     roi_counts: list[int] = []
+    weak_roi_counts: list[int] = []
     diagnostic_active_counts: list[int] = []
+    weak_reactivated_counts: list[int] = []
     lost_counts: list[int] = []
     accepted_no_track_frames = 0
     detector_accepted_no_track_frames = 0
     lane_track_ids: dict[str, set[int]] = defaultdict(set)
+    weak_reactivated_track_ids: dict[str, set[int]] = defaultdict(set)
 
     for frame_index, frame in enumerate(messages):
         boxes = _frame_boxes(frame, frame_index)
@@ -322,13 +326,16 @@ def summarize(messages: list[dict[str, Any]], expected_turns_ms: list[float]) ->
         diagnostic_floors.add(_number(diagnostics.get("diagnostic_floor"), f"frame {frame_index}.diagnostic_floor"))
         candidate_count = _diagnostic_stage(diagnostics.get("person_candidates"), f"frame {frame_index}.person_candidates")
         accepted_count = _diagnostic_stage(diagnostics.get("detector_accepted"), f"frame {frame_index}.detector_accepted")
+        weak_candidate_count = _diagnostic_stage(diagnostics.get("weak_candidates"), f"frame {frame_index}.weak_candidates")
         lanes = diagnostics.get("lanes")
         if not isinstance(lanes, list) or not lanes:
             raise SummaryError(f"frame {frame_index}: diagnostics.lanes must be a non-empty list")
 
         roi_count = 0
+        weak_roi_count = 0
         retained_lost = 0
         diagnostic_active_ids: set[int] = set()
+        frame_weak_reactivated_ids: set[tuple[str, int]] = set()
         seen_lanes: set[str] = set()
         for lane_index, lane in enumerate(lanes):
             if not isinstance(lane, dict):
@@ -338,6 +345,10 @@ def summarize(messages: list[dict[str, Any]], expected_turns_ms: list[float]) ->
                 raise SummaryError(f"frame {frame_index}, lane {lane_index}: lane_id must be unique and non-empty")
             seen_lanes.add(lane_id)
             roi_count += _diagnostic_stage(lane.get("after_roi"), f"frame {frame_index}, lane {lane_id}.after_roi")
+            weak_roi_count += _diagnostic_stage(
+                lane.get("weak_candidates_after_roi"),
+                f"frame {frame_index}, lane {lane_id}.weak_candidates_after_roi",
+            )
             lane_active_ids = lane.get("active_track_ids")
             if not isinstance(lane_active_ids, list):
                 raise SummaryError(f"frame {frame_index}, lane {lane_id}: active_track_ids must be a list")
@@ -347,6 +358,16 @@ def summarize(messages: list[dict[str, Any]], expected_turns_ms: list[float]) ->
                     raise SummaryError(f"frame {frame_index}: duplicate diagnostic active track id {track_id}")
                 diagnostic_active_ids.add(track_id)
                 lane_track_ids[lane_id].add(track_id)
+            lane_weak_reactivated_ids = lane.get("weak_reactivated_track_ids")
+            if not isinstance(lane_weak_reactivated_ids, list):
+                raise SummaryError(f"frame {frame_index}, lane {lane_id}: weak_reactivated_track_ids must be a list")
+            for value in lane_weak_reactivated_ids:
+                track_id = _integer(value, f"frame {frame_index}, lane {lane_id}.weak_reactivated_track_id")
+                key = (lane_id, track_id)
+                if key in frame_weak_reactivated_ids:
+                    raise SummaryError(f"frame {frame_index}: duplicate weak reactivation for track {key}")
+                frame_weak_reactivated_ids.add(key)
+                weak_reactivated_track_ids[lane_id].add(track_id)
             lane_lost = _integer(
                 lane.get("retained_lost_track_count"),
                 f"frame {frame_index}, lane {lane_id}.retained_lost_track_count",
@@ -362,11 +383,18 @@ def summarize(messages: list[dict[str, Any]], expected_turns_ms: list[float]) ->
             )
         if roi_count > accepted_count:
             raise SummaryError(f"frame {frame_index}: after_roi exceeds detector_accepted")
+        if weak_candidate_count > candidate_count:
+            raise SummaryError(f"frame {frame_index}: weak_candidates exceeds person_candidates")
+        if weak_roi_count > weak_candidate_count:
+            raise SummaryError(f"frame {frame_index}: weak_candidates_after_roi exceeds weak_candidates")
 
         candidate_counts.append(candidate_count)
         accepted_counts.append(accepted_count)
+        weak_candidate_counts.append(weak_candidate_count)
         roi_counts.append(roi_count)
+        weak_roi_counts.append(weak_roi_count)
         diagnostic_active_counts.append(len(diagnostic_active_ids))
+        weak_reactivated_counts.append(len(frame_weak_reactivated_ids))
         lost_counts.append(retained_lost)
         if roi_count > 0 and not diagnostic_active_ids:
             accepted_no_track_frames += 1
@@ -386,7 +414,9 @@ def summarize(messages: list[dict[str, Any]], expected_turns_ms: list[float]) ->
         "frame_coverage": diagnostics_frames / frame_count,
         "diagnostic_floors": sorted(diagnostic_floors),
         "stages": None,
+        "funnel": None,
         "roi_rejected_observations": None,
+        "weak_roi_rejected_observations": None,
         "accepted_no_track_frames": None,
         "detector_accepted_no_track_frames": None,
         "retained_lost": None,
@@ -397,10 +427,19 @@ def summarize(messages: list[dict[str, Any]], expected_turns_ms: list[float]) ->
                 "stages": {
                     "person_candidates": _stage_summary(candidate_counts, frame_count),
                     "detector_accepted": _stage_summary(accepted_counts, frame_count),
+                    "weak_candidates": _stage_summary(weak_candidate_counts, frame_count),
                     "after_roi": _stage_summary(roi_counts, frame_count),
+                    "weak_candidates_after_roi": _stage_summary(weak_roi_counts, frame_count),
                     "active_tracks": _stage_summary(diagnostic_active_counts, frame_count),
                 },
+                "funnel": {
+                    "candidate_to_accepted": sum(accepted_counts) / sum(candidate_counts) if sum(candidate_counts) else None,
+                    "accepted_to_roi": sum(roi_counts) / sum(accepted_counts) if sum(accepted_counts) else None,
+                    "candidate_to_weak": sum(weak_candidate_counts) / sum(candidate_counts) if sum(candidate_counts) else None,
+                    "weak_to_roi": sum(weak_roi_counts) / sum(weak_candidate_counts) if sum(weak_candidate_counts) else None,
+                },
                 "roi_rejected_observations": sum(accepted_counts) - sum(roi_counts),
+                "weak_roi_rejected_observations": sum(weak_candidate_counts) - sum(weak_roi_counts),
                 "accepted_no_track_frames": accepted_no_track_frames,
                 "detector_accepted_no_track_frames": detector_accepted_no_track_frames,
                 "retained_lost": {
@@ -429,6 +468,14 @@ def summarize(messages: list[dict[str, Any]], expected_turns_ms: list[float]) ->
             "all_active_gaps": _gap_summary(active_presence, fps, internal_only=False),
             "same_id_reacquisitions": reacquisitions,
             "longest_same_id_reacquisition_gap_frames": longest_reacquisition_gap,
+            "weak_reactivations": {
+                "events": sum(weak_reactivated_counts),
+                "frames_nonempty": sum(count > 0 for count in weak_reactivated_counts),
+                "unique_track_ids": sum(len(track_ids) for track_ids in weak_reactivated_track_ids.values()),
+                "track_ids_by_lane": {
+                    lane_id: sorted(track_ids) for lane_id, track_ids in sorted(weak_reactivated_track_ids.items())
+                },
+            },
             "tracks": tracks,
         },
         "lap": _lap_summary(messages, expected_turns_ms),

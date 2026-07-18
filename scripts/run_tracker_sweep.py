@@ -35,6 +35,11 @@ CONFIG_KEYS = (
     "track_buffer",
     "match_threshold",
     "mot20",
+    "weak_reactivation_enabled",
+    "weak_reactivation_score_threshold",
+    "weak_reactivation_min_box_area",
+    "weak_reactivation_max_gap_seconds",
+    "weak_reactivation_max_center_distance",
 )
 ID_PATTERN = re.compile(r"^[a-z0-9][a-z0-9_-]*$")
 SHA256_PATTERN = re.compile(r"^[0-9a-f]{64}$")
@@ -55,9 +60,21 @@ def _configuration(mapping: Any, name: str) -> dict[str, Any]:
     if missing:
         raise SweepError(f"{name} is missing {missing}")
     result = {key: mapping[key] for key in CONFIG_KEYS}
-    if not isinstance(result["lane_roi_enabled"], bool) or not isinstance(result["mot20"], bool):
-        raise SweepError(f"{name} lane_roi_enabled and mot20 must be booleans")
-    for key in ("score_threshold", "min_box_area", "track_threshold", "match_threshold"):
+    if not all(
+        isinstance(result[key], bool)
+        for key in ("lane_roi_enabled", "mot20", "weak_reactivation_enabled")
+    ):
+        raise SweepError(f"{name} lane_roi_enabled, mot20 and weak_reactivation_enabled must be booleans")
+    for key in (
+        "score_threshold",
+        "min_box_area",
+        "track_threshold",
+        "match_threshold",
+        "weak_reactivation_score_threshold",
+        "weak_reactivation_min_box_area",
+        "weak_reactivation_max_gap_seconds",
+        "weak_reactivation_max_center_distance",
+    ):
         if not _is_number(result[key]):
             raise SweepError(f"{name}.{key} must be a number")
     if not isinstance(result["track_buffer"], int) or isinstance(result["track_buffer"], bool):
@@ -69,6 +86,17 @@ def _configuration(mapping: Any, name: str) -> dict[str, Any]:
     for key in ("track_threshold", "match_threshold"):
         if not 0.0 <= float(result[key]) <= 1.0:
             raise SweepError(f"{name}.{key} must be between zero and one")
+    weak_reactivation_score_ceiling = min(float(result["score_threshold"]), float(result["track_threshold"]))
+    if not 0.05 <= float(result["weak_reactivation_score_threshold"]) < weak_reactivation_score_ceiling:
+        raise SweepError(
+            f"{name}.weak_reactivation_score_threshold must be at least 0.05 and below ordinary thresholds"
+        )
+    if float(result["weak_reactivation_min_box_area"]) < 0:
+        raise SweepError(f"{name}.weak_reactivation_min_box_area cannot be negative")
+    if float(result["weak_reactivation_max_gap_seconds"]) <= 0:
+        raise SweepError(f"{name}.weak_reactivation_max_gap_seconds must be positive")
+    if not 0.0 < float(result["weak_reactivation_max_center_distance"]) <= 1.0:
+        raise SweepError(f"{name}.weak_reactivation_max_center_distance must be in (0, 1]")
     if result["track_buffer"] <= 0:
         raise SweepError(f"{name}.track_buffer must be positive")
     return result
@@ -206,6 +234,11 @@ def _extra_vars(variant_id: str, configuration: dict[str, Any]) -> dict[str, Any
         "tracker_track_buffer": configuration["track_buffer"],
         "tracker_match_threshold": configuration["match_threshold"],
         "tracker_mot20": configuration["mot20"],
+        "tracker_weak_reactivation_enabled": configuration["weak_reactivation_enabled"],
+        "tracker_weak_reactivation_score_threshold": configuration["weak_reactivation_score_threshold"],
+        "tracker_weak_reactivation_min_box_area": configuration["weak_reactivation_min_box_area"],
+        "tracker_weak_reactivation_max_gap_seconds": configuration["weak_reactivation_max_gap_seconds"],
+        "tracker_weak_reactivation_max_center_distance": configuration["weak_reactivation_max_center_distance"],
     }
 
 
@@ -288,6 +321,12 @@ def _comparison_row(
             summary, "diagnostics", "stages", "detector_accepted", "frame_coverage"
         ),
         "after_roi_coverage": _nested(summary, "diagnostics", "stages", "after_roi", "frame_coverage"),
+        "weak_candidates_coverage": _nested(
+            summary, "diagnostics", "stages", "weak_candidates", "frame_coverage"
+        ),
+        "weak_candidates_after_roi_coverage": _nested(
+            summary, "diagnostics", "stages", "weak_candidates_after_roi", "frame_coverage"
+        ),
         "active_track_coverage": _nested(summary, "tracking", "active_stage", "frame_coverage"),
         "accepted_no_track_frames": _nested(summary, "diagnostics", "accepted_no_track_frames"),
         "unique_track_ids": _nested(summary, "tracking", "unique_track_ids"),
@@ -297,6 +336,11 @@ def _comparison_row(
         "internal_gap_p95_frames": _nested(summary, "tracking", "internal_active_gaps", "frames", "p95"),
         "internal_gap_max_frames": _nested(summary, "tracking", "internal_active_gaps", "frames", "max"),
         "lost_peak": _nested(summary, "diagnostics", "retained_lost", "peak"),
+        "weak_reactivation_events": _nested(summary, "tracking", "weak_reactivations", "events"),
+        "weak_reactivation_frames": _nested(summary, "tracking", "weak_reactivations", "frames_nonempty"),
+        "weak_reactivation_unique_track_ids": _nested(
+            summary, "tracking", "weak_reactivations", "unique_track_ids"
+        ),
         "lap_score_max": lap_maximum.get("lap_score"),
         "lap_candidate_time_ms": lap_maximum.get("candidate_time_ms"),
         "lap_candidate_error_ms": lap_maximum.get("candidate_error_ms"),
