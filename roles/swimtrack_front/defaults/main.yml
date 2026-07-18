@@ -20,7 +20,9 @@ swimtrack_front_vision_base_url: http://127.0.0.1:8001
 swimtrack_front_vision_auth_token: ""
 swimtrack_front_vision_lap_calibration_id: fixed-camera-v1
 swimtrack_front_vision_tracking_diagnostics: none
+swimtrack_front_vision_transport: frames
 swimtrack_front_vision_batch_size: 4
+swimtrack_front_vision_prepared_batch_queue_size: 2
 swimtrack_front_vision_max_fps: 15
 swimtrack_front_lap_episode_mode: shadow
 swimtrack_front_lap_confidence_threshold: ""

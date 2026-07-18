@@ -34,22 +34,27 @@
       - swimtrack_ai_remote_paths.results | map(attribute='stat.exists') | min
     fail_msg: "The remote checkout, uv, Python 3.12, or the user systemd bus is missing."
 
-- name: Inspect local model artifacts
+- name: Inspect the local ONNX model artifact
   ansible.builtin.stat:
-    path: "{{ swimtrack_ai_local_model_dir }}/{{ item }}"
+    path: "{{ swimtrack_ai_local_model_dir }}/{{ swimtrack_ai_onnx_filename }}"
     checksum_algorithm: sha256
-  loop:
-    - "{{ swimtrack_ai_onnx_filename }}"
-    - "{{ swimtrack_ai_onnx_filename }}.data"
-  register: swimtrack_ai_local_models
+  register: swimtrack_ai_local_onnx
   delegate_to: localhost
   run_once: true
 
-- name: Assert local model artifacts exist
+- name: Assert the local ONNX model artifact exists
   ansible.builtin.assert:
     that:
-      - swimtrack_ai_local_models.results | map(attribute='stat.exists') | min
-    fail_msg: "The ONNX model or its external data file is missing from {{ swimtrack_ai_local_model_dir }}."
+      - swimtrack_ai_local_onnx.stat.exists
+      - (swimtrack_ai_local_onnx.stat.checksum | default('')) == swimtrack_ai_onnx_sha256
+    fail_msg: "The ONNX model is missing or does not match the pinned checksum in {{ swimtrack_ai_local_model_dir }}. Generate it with swimtrack-ai/scripts/export_rtdetrv2_onnx.py."
+  run_once: true
+
+- name: Inspect optional local ONNX external data
+  ansible.builtin.stat:
+    path: "{{ swimtrack_ai_local_model_dir }}/{{ swimtrack_ai_onnx_filename }}.data"
+  register: swimtrack_ai_local_onnx_data
+  delegate_to: localhost
   run_once: true
 
 - name: Read the remote glibc version
@@ -84,6 +89,33 @@
       - swimtrack_ai_gpu.rc == 0
       - swimtrack_ai_gpu.stdout | length > 0
     fail_msg: "nvidia-smi could not access GPU {{ swimtrack_ai_gpu_index }}."
+
+- name: Verify FFmpeg exposes CUDA hardware acceleration
+  ansible.builtin.command:
+    argv:
+      - "{{ swimtrack_ai_ffmpeg_path }}"
+      - -hide_banner
+      - -hwaccels
+  register: swimtrack_ai_ffmpeg_hwaccels
+  changed_when: false
+  check_mode: false
+
+- name: Verify FFmpeg exposes the H.264 NVDEC decoder
+  ansible.builtin.command:
+    argv:
+      - "{{ swimtrack_ai_ffmpeg_path }}"
+      - -hide_banner
+      - -decoders
+  register: swimtrack_ai_ffmpeg_decoders
+  changed_when: false
+  check_mode: false
+
+- name: Assert the compressed video path can use NVDEC
+  ansible.builtin.assert:
+    that:
+      - swimtrack_ai_ffmpeg_hwaccels.stdout is ansible.builtin.search('(?m)^cuda$')
+      - swimtrack_ai_ffmpeg_decoders.stdout is ansible.builtin.search('(?m)^.*h264_cuvid')
+    fail_msg: "FFmpeg must expose CUDA hwaccel and h264_cuvid for the configured GPU-only video endpoint."
 
 - name: Check free space on the remote home filesystem
   ansible.builtin.command:

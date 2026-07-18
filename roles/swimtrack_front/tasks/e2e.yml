@@ -1,6 +1,30 @@
 ---
 - name: Run the public video E2E test
   block:
+    - name: Load the private AI credentials for the direct video E2E test
+      ansible.builtin.import_tasks: vision_credentials.yml
+
+    - name: Require an AI token for the direct video E2E test
+      ansible.builtin.assert:
+        that:
+          - swimtrack_front_vision_auth_token | length > 0
+        fail_msg: "The direct AI video E2E test requires a configured SwimTrack AI authentication token."
+      no_log: true
+
+    - name: Read the deployed Front environment
+      ansible.builtin.slurp:
+        src: "{{ swimtrack_front_environment_file }}"
+      register: swimtrack_front_e2e_environment
+      no_log: true
+
+    - name: Require the GPU video transport in the deployed Front environment
+      ansible.builtin.assert:
+        that:
+          - >-
+            (swimtrack_front_e2e_environment.content | b64decode)
+            is search('(?m)^VISION_TRANSPORT=video$')
+        fail_msg: "The deployed Front is not configured with VISION_TRANSPORT=video."
+
     - name: Verify the controller source video
       ansible.builtin.stat:
         path: "{{ swimtrack_front_e2e_source_video }}"
@@ -131,6 +155,27 @@
         suffix: .py
       register: swimtrack_front_e2e_remote_validator
 
+    - name: Create a temporary direct AI video response path on the Front host
+      ansible.builtin.tempfile:
+        state: file
+        path: "{{ swimtrack_front_e2e_temp_dir }}"
+        suffix: .ndjson
+      register: swimtrack_front_e2e_remote_ndjson
+
+    - name: Create a temporary direct AI response header path on the Front host
+      ansible.builtin.tempfile:
+        state: file
+        path: "{{ swimtrack_front_e2e_temp_dir }}"
+        suffix: .headers
+      register: swimtrack_front_e2e_remote_ndjson_headers
+
+    - name: Create a temporary direct AI validator path on the Front host
+      ansible.builtin.tempfile:
+        state: file
+        path: "{{ swimtrack_front_e2e_temp_dir }}"
+        suffix: .py
+      register: swimtrack_front_e2e_remote_ndjson_validator
+
     - name: Copy the generated fixture to the Front host
       ansible.builtin.copy:
         src: "{{ swimtrack_front_e2e_fixture.path }}"
@@ -142,6 +187,104 @@
         src: "{{ swimtrack_front_e2e_validator_local_path }}"
         dest: "{{ swimtrack_front_e2e_remote_validator.path }}"
         mode: "0700"
+
+    - name: Copy the direct AI video validator to the Front host
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/../scripts/validate_video_ndjson_e2e.py"
+        dest: "{{ swimtrack_front_e2e_remote_ndjson_validator.path }}"
+        mode: "0700"
+
+    - name: Create a temporary tracking session for the direct AI video test
+      ansible.builtin.uri:
+        url: "{{ swimtrack_front_vision_base_url | regex_replace('/+$', '') }}/v1/tracking-sessions"
+        method: POST
+        headers:
+          X-Swimtrack-Auth: "{{ swimtrack_front_vision_auth_token }}"
+        body_format: json
+        body:
+          fps: "{{ swimtrack_front_e2e_fixture_fps | float }}"
+        status_code: 201
+        return_content: true
+      register: swimtrack_front_e2e_ai_session
+      no_log: true
+
+    - name: Upload the fixture directly to the AI NVDEC video endpoint
+      ansible.builtin.command:
+        argv:
+          - curl
+          - --silent
+          - --show-error
+          - --fail-with-body
+          - --no-buffer
+          - --max-time
+          - "{{ swimtrack_front_e2e_timeout_seconds | string }}"
+          - --header
+          - "X-Swimtrack-Auth: {{ swimtrack_front_vision_auth_token }}"
+          - --header
+          - "Accept: application/x-ndjson"
+          - --form
+          - "sample_fps={{ swimtrack_front_e2e_fixture_fps }}"
+          - --form
+          - "video=@{{ swimtrack_front_e2e_remote_fixture.path }};type=video/mp4"
+          - --dump-header
+          - "{{ swimtrack_front_e2e_remote_ndjson_headers.path }}"
+          - --output
+          - "{{ swimtrack_front_e2e_remote_ndjson.path }}"
+          - --write-out
+          - '%{response_code} %{content_type}\n'
+          - "{{ swimtrack_front_vision_base_url | regex_replace('/+$', '') }}/v1/tracking-sessions/{{ swimtrack_front_e2e_ai_session.json.session_id }}/video"
+      register: swimtrack_front_e2e_direct_ai_curl
+      changed_when: false
+      no_log: true
+
+    - name: Validate the direct AI video response headers
+      ansible.builtin.assert:
+        that:
+          - swimtrack_front_e2e_direct_ai_curl.stdout is match('^200\\s+application/x-ndjson')
+        fail_msg: "The direct AI video endpoint did not return a successful NDJSON response."
+
+    - name: Read the direct AI video response headers
+      ansible.builtin.slurp:
+        src: "{{ swimtrack_front_e2e_remote_ndjson_headers.path }}"
+      register: swimtrack_front_e2e_direct_ai_headers
+
+    - name: Require explicit NVDEC selection from the direct AI video endpoint
+      ansible.builtin.assert:
+        that:
+          - >-
+            (swimtrack_front_e2e_direct_ai_headers.content | b64decode)
+            is search('(?im)^x-swimtrack-decode-path:\\s*nvdec\\s*$')
+        fail_msg: "The direct AI video endpoint did not explicitly report X-Swimtrack-Decode-Path: nvdec."
+
+    - name: Validate the ordered direct AI NDJSON contract
+      ansible.builtin.command:
+        argv:
+          - "{{ swimtrack_front_uv_path }}"
+          - run
+          - --script
+          - "{{ swimtrack_front_e2e_remote_ndjson_validator.path }}"
+          - --stream
+          - "{{ swimtrack_front_e2e_remote_ndjson.path }}"
+          - --expected-events
+          - "{{ swimtrack_front_e2e_fixture_metadata.nb_read_frames | string }}"
+          - --width
+          - "{{ swimtrack_front_e2e_fixture_metadata.width | string }}"
+          - --height
+          - "{{ swimtrack_front_e2e_fixture_metadata.height | string }}"
+          - --fps
+          - "{{ swimtrack_front_e2e_fixture_fps | string }}"
+          - --time-tolerance-ms
+          - "{{ (swimtrack_front_e2e_time_tolerance_seconds | float * 1000.0) | string }}"
+      register: swimtrack_front_e2e_direct_ai_validation
+      changed_when: false
+
+    - name: Record the direct AI video contract summary
+      ansible.builtin.set_fact:
+        swimtrack_front_e2e_direct_ai_summary: "{{ swimtrack_front_e2e_direct_ai_validation.stdout | from_json }}"
+
+    - name: Report the direct AI video contract summary
+      ansible.builtin.debug:
+        msg: "{{ swimtrack_front_e2e_direct_ai_summary | to_nice_json }}"
 
     - name: Upload the fixture through the published Apache endpoint
       ansible.builtin.command:
@@ -224,6 +367,34 @@
       ansible.builtin.fail:
         msg: "The published Front to AI E2E test failed."
   always:
+    - name: Close the temporary direct AI video session
+      ansible.builtin.uri:
+        url: "{{ swimtrack_front_vision_base_url | regex_replace('/+$', '') }}/v1/tracking-sessions/{{ swimtrack_front_e2e_ai_session.json.session_id }}"
+        method: DELETE
+        headers:
+          X-Swimtrack-Auth: "{{ swimtrack_front_vision_auth_token }}"
+        status_code: 204
+      when: swimtrack_front_e2e_ai_session is defined and swimtrack_front_e2e_ai_session.json.session_id is defined
+      no_log: true
+
+    - name: Remove the temporary direct AI NDJSON response from the Front host
+      ansible.builtin.file:
+        path: "{{ swimtrack_front_e2e_remote_ndjson.path }}"
+        state: absent
+      when: swimtrack_front_e2e_remote_ndjson is defined
+
+    - name: Remove the temporary direct AI response headers from the Front host
+      ansible.builtin.file:
+        path: "{{ swimtrack_front_e2e_remote_ndjson_headers.path }}"
+        state: absent
+      when: swimtrack_front_e2e_remote_ndjson_headers is defined
+
+    - name: Remove the temporary direct AI validator from the Front host
+      ansible.builtin.file:
+        path: "{{ swimtrack_front_e2e_remote_ndjson_validator.path }}"
+        state: absent
+      when: swimtrack_front_e2e_remote_ndjson_validator is defined
+
     - name: Remove the temporary fixture from the Front host
       ansible.builtin.file:
         path: "{{ swimtrack_front_e2e_remote_fixture.path }}"

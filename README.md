@@ -5,8 +5,8 @@ Despliega `swimtrack-ai` en la máquina GPU accesible mediante el alias SSH `pro
 ## Requisitos del controller
 
 - Ejecutar desde Debian/WSL con el alias `proyecto_ia_gpu` definido en `~/.ssh/config`.
-- Tener `swimtrack-ansible`, `swimtrack-ai` y `swimtrack-poc` como directorios hermanos.
-- Conservar `swimtrack-poc/artifacts/models/rtdetrv2_s.onnx` y `rtdetrv2_s.onnx.data`.
+- Tener `swimtrack-ansible` y `swimtrack-ai` como directorios hermanos.
+- Generar `swimtrack-ai/artifacts/models/rtdetrv2_s.onnx` con `uv run --script swimtrack-ai/scripts/export_rtdetrv2_onnx.py` antes del despliegue. El archivo `.onnx.data` es opcional para artifacts externos heredados y no se requiere para el artifact actual.
 - Usar `uv`; Ansible Core queda fijado en `uv.lock`.
 
 La configuración de inventario fuerza `-F ~/.ssh/config` porque el OpenSSH de este controller rechaza un archivo global con permisos inseguros. El alias sigue siendo la única dirección remota almacenada por este proyecto. Usa siempre `./ansible-run`: además de ejecutar Ansible mediante `uv`, fija explícitamente `ANSIBLE_CONFIG` porque Ansible ignora por seguridad archivos de configuración encontrados automáticamente dentro del montaje world-writable `/mnt/c`.

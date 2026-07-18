@@ -83,14 +83,26 @@
     - path: "{{ swimtrack_ai_systemd_dir }}"
       mode: "0755"
 
-- name: Copy model artifacts to the GPU host
+- name: Copy the ONNX model artifact to the GPU host
   ansible.builtin.copy:
-    src: "{{ swimtrack_ai_local_model_dir }}/{{ item }}"
-    dest: "{{ swimtrack_ai_model_dir }}/{{ item }}"
+    src: "{{ swimtrack_ai_local_model_dir }}/{{ swimtrack_ai_onnx_filename }}"
+    dest: "{{ swimtrack_ai_model_dir }}/{{ swimtrack_ai_onnx_filename }}"
     mode: "0644"
-  loop:
-    - "{{ swimtrack_ai_onnx_filename }}"
-    - "{{ swimtrack_ai_onnx_filename }}.data"
+  notify: Restart SwimTrack AI
+
+- name: Copy optional ONNX external data to the GPU host
+  ansible.builtin.copy:
+    src: "{{ swimtrack_ai_local_model_dir }}/{{ swimtrack_ai_onnx_filename }}.data"
+    dest: "{{ swimtrack_ai_model_dir }}/{{ swimtrack_ai_onnx_filename }}.data"
+    mode: "0644"
+  when: swimtrack_ai_local_onnx_data.stat.exists
+  notify: Restart SwimTrack AI
+
+- name: Remove stale ONNX external data from the GPU host
+  ansible.builtin.file:
+    path: "{{ swimtrack_ai_model_dir }}/{{ swimtrack_ai_onnx_filename }}.data"
+    state: absent
+  when: not swimtrack_ai_local_onnx_data.stat.exists
   notify: Restart SwimTrack AI
 
 - name: Inspect the remote lock file

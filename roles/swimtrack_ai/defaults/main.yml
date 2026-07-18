@@ -6,7 +6,7 @@ swimtrack_ai_repo_dir: "{{ swimtrack_ai_remote_home }}/swimtrack/swimtrack-ai"
 swimtrack_ai_uv_path: "{{ swimtrack_ai_remote_home }}/.local/bin/uv"
 swimtrack_ai_python_path: /usr/bin/python3.12
 
-swimtrack_ai_local_model_dir: "{{ playbook_dir }}/../../swimtrack-poc/artifacts/models"
+swimtrack_ai_local_model_dir: "{{ playbook_dir }}/../../swimtrack-ai/artifacts/models"
 swimtrack_ai_model_dir: "{{ swimtrack_ai_remote_home }}/.local/share/swimtrack-ai/models"
 swimtrack_ai_cache_dir: "{{ swimtrack_ai_remote_home }}/.cache/swimtrack-ai"
 swimtrack_ai_config_dir: "{{ swimtrack_ai_remote_home }}/.config/swimtrack-ai"
@@ -17,12 +17,22 @@ swimtrack_ai_sync_marker: "{{ swimtrack_ai_repo_dir }}/.venv/.swimtrack-uv-lock.
 swimtrack_ai_local_secret_file: "{{ lookup('ansible.builtin.env', 'HOME') }}/.ansible/swimtrack-ai/auth_token"
 
 swimtrack_ai_onnx_filename: rtdetrv2_s.onnx
+swimtrack_ai_onnx_sha256: 17eb1ce5c325a685474c75bfa658245117ddbf764301ed9fdce2175bedb20fba
 swimtrack_ai_engine_filename: rtdetrv2_s_fp16.engine
 swimtrack_ai_network_mode: loopback
 swimtrack_ai_bind_host: 127.0.0.1
 swimtrack_ai_port: 8001
 swimtrack_ai_gpu_index: 0
 swimtrack_ai_max_batch_frames: 8
+swimtrack_ai_max_video_bytes: 1073741824
+swimtrack_ai_video_decode_batch_frames: 4
+swimtrack_ai_ffmpeg_path: ffmpeg
+swimtrack_ai_ffprobe_path: ffprobe
+swimtrack_ai_video_probe_timeout_seconds: 30
+swimtrack_ai_decode_workers: 4
+swimtrack_ai_preprocess_workers: 4
+swimtrack_ai_trt_opt_batch_size: 4
+swimtrack_ai_trt_max_batch_size: 8
 swimtrack_ai_diagnostic_score_floor: 0.05
 swimtrack_ai_score_threshold: 0.15
 swimtrack_ai_min_box_area: 250
