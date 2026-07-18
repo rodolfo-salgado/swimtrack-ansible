@@ -103,6 +103,17 @@
           - swimtrack_smoke_batch.json.frames[0].boxes is sequence
         fail_msg: "The deployed service returned an invalid batch response."
 
+    - name: Validate batch timing telemetry
+      ansible.builtin.assert:
+        that:
+          - swimtrack_smoke_batch.x_swimtrack_decode_ms is defined
+          - swimtrack_smoke_batch.x_swimtrack_process_ms is defined
+          - swimtrack_smoke_batch.x_swimtrack_total_ms is defined
+          - swimtrack_smoke_batch.x_swimtrack_decode_ms | float >= 0
+          - swimtrack_smoke_batch.x_swimtrack_process_ms | float >= 0
+          - swimtrack_smoke_batch.x_swimtrack_total_ms | float >= 0
+        fail_msg: "The deployed service did not return valid batch timing telemetry."
+
     - name: Report smoke test result
       ansible.builtin.debug:
         msg: "TensorRT processed one frame and returned {{ swimtrack_smoke_batch.json.frames[0].boxes | length }} bbox(es)."
