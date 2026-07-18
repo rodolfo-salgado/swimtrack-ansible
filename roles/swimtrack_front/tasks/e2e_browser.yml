@@ -11,28 +11,25 @@
 
     - name: Verify the local browser E2E source tree
       ansible.builtin.stat:
-        path: "{{ swimtrack_front_browser_e2e_source_dir }}/package.json"
-      register: swimtrack_front_browser_e2e_package
+        path: "{{ swimtrack_front_browser_e2e_source_dir }}/package-lock.json"
+      register: swimtrack_front_browser_e2e_lockfile
       delegate_to: localhost
       run_once: true
 
-    - name: Require the Playwright package manifest
+    - name: Require the locked Playwright dependencies
       ansible.builtin.assert:
         that:
-          - swimtrack_front_browser_e2e_package.stat.exists
-          - swimtrack_front_browser_e2e_package.stat.isreg
-        fail_msg: "The browser E2E source tree must contain swimtrack-front/package.json."
+          - swimtrack_front_browser_e2e_lockfile.stat.exists
+          - swimtrack_front_browser_e2e_lockfile.stat.isreg
+        fail_msg: "The browser E2E source tree must contain swimtrack-front/package-lock.json."
       delegate_to: localhost
       run_once: true
 
-    - name: Install pinned browser E2E dependencies
+    - name: Install locked browser E2E dependencies
       ansible.builtin.command:
         argv:
           - npm
-          - install
-          - --ignore-scripts
-          - --no-audit
-          - --no-fund
+          - ci
       args:
         chdir: "{{ swimtrack_front_browser_e2e_source_dir }}"
       when: swimtrack_front_browser_e2e_install_dependencies | bool
