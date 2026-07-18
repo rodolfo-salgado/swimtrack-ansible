@@ -14,6 +14,14 @@
       - swimtrack_front_lap_episode_mode in ['off', 'shadow']
     fail_msg: "swimtrack_front_lap_episode_mode must be off or shadow."
 
+- name: Validate Front vision throughput configuration
+  ansible.builtin.assert:
+    that:
+      - swimtrack_front_vision_batch_size | int >= 1
+      - swimtrack_front_vision_batch_size | int <= 8
+      - swimtrack_front_vision_max_fps | float > 0
+    fail_msg: "swimtrack_front_vision_batch_size must be between 1 and 8 and swimtrack_front_vision_max_fps must be positive."
+
 - name: Inspect the remote application directory
   ansible.builtin.stat:
     path: "{{ swimtrack_front_repo_dir }}"

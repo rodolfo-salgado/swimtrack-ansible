@@ -1,4 +1,4 @@
-swimtrack_front_revision: 2e0c9ea268bbb9ef4283118b6ea10a0b7d894be9
+swimtrack_front_revision: 90d53e5247ea0344bc5af93b0aabe5e4d7bc7f1c
 swimtrack_front_remote_user: grupo1
 swimtrack_front_remote_home: /home/grupo1
 swimtrack_front_repo_dir: /home/grupo1/swimtrack/swimtrack-front
@@ -6,5 +6,7 @@ swimtrack_front_repository: https://github.com/Benjjvv/swimtrack-front.git
 swimtrack_front_url_prefix: /swimtrack/
 swimtrack_front_port: 7101
 swimtrack_front_vision_base_url: http://10.0.218.101:7001
+swimtrack_front_vision_batch_size: 4
+swimtrack_front_vision_max_fps: 15
 swimtrack_front_require_vision_auth_token: true
 swimtrack_front_verify_vision_api: true
