@@ -5,7 +5,6 @@ swimtrack_front_repo_dir: /home/grupo1/swimtrack/swimtrack-front
 swimtrack_front_repository: https://github.com/Benjjvv/swimtrack-front.git
 swimtrack_front_url_prefix: /swimtrack/
 swimtrack_front_port: 7101
-swimtrack_front_browser_e2e_base_url: http://10.0.218.111/swimtrack/
 swimtrack_front_vision_base_url: http://10.0.218.101:7001
 swimtrack_front_vision_transport: video
 swimtrack_front_vision_batch_size: 4
