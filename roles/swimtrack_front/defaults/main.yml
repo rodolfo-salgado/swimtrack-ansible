@@ -23,7 +23,7 @@ swimtrack_front_vision_tracking_diagnostics: none
 swimtrack_front_vision_transport: frames
 swimtrack_front_vision_batch_size: 4
 swimtrack_front_vision_prepared_batch_queue_size: 2
-swimtrack_front_vision_max_fps: 15
+swimtrack_front_vision_max_fps: 30
 swimtrack_front_lap_episode_mode: shadow
 swimtrack_front_lap_confidence_threshold: ""
 swimtrack_front_vision_auth_token_file: "{{ lookup('ansible.builtin.env', 'HOME') }}/.ansible/swimtrack-ai/auth_token"
@@ -41,8 +41,8 @@ swimtrack_front_e2e_source_video: "{{ playbook_dir }}/../../input_vids/20260513_
 swimtrack_front_e2e_source_sha256: c981fbadc43d11999ea63804699dc6edcc3ee4a9d9bd1d33ab73afe7a2457f1d
 swimtrack_front_e2e_start_seconds: 0
 swimtrack_front_e2e_duration_seconds: 2
-swimtrack_front_e2e_fixture_fps: 10
-swimtrack_front_e2e_expected_frame_count: 20
+swimtrack_front_e2e_fixture_fps: 30
+swimtrack_front_e2e_expected_frame_count: 60
 swimtrack_front_e2e_timeout_seconds: 600
 swimtrack_front_e2e_time_tolerance_seconds: 0.02
 swimtrack_front_e2e_temp_dir: /tmp
