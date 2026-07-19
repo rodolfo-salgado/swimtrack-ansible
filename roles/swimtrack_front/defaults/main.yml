@@ -25,7 +25,7 @@ swimtrack_front_vision_batch_size: 4
 swimtrack_front_vision_prepared_batch_queue_size: 2
 swimtrack_front_vision_max_fps: 30
 swimtrack_front_lap_episode_mode: shadow
-swimtrack_front_lap_confidence_threshold: ""
+swimtrack_front_lap_confidence_threshold: "0.2"
 swimtrack_front_vision_auth_token_file: "{{ lookup('ansible.builtin.env', 'HOME') }}/.ansible/swimtrack-ai/auth_token"
 swimtrack_front_require_vision_auth_token: false
 swimtrack_front_verify_vision_api: false
