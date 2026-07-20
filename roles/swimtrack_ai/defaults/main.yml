@@ -63,7 +63,10 @@ swimtrack_ai_identity_max_lane_x_delta: 0.22
 swimtrack_ai_identity_duplicate_iou: 0.45
 swimtrack_ai_identity_duplicate_position_delta: 0.08
 swimtrack_ai_identity_duplicate_lane_x_delta: 0.15
-swimtrack_ai_identity_additional_min_position_span: 0.10
+swimtrack_ai_identity_additional_confirmation_observations: 8
+swimtrack_ai_identity_additional_confirmation_seconds: 0.50
+swimtrack_ai_identity_additional_confirmation_confidence: 0.30
+swimtrack_ai_identity_additional_min_position_span: 0.15
 swimtrack_ai_identity_additional_cooccurrence_max_gap_seconds: 0.25
 swimtrack_ai_identity_max_per_lane: 2
 swimtrack_ai_workspace_gb: 4
