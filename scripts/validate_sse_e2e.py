@@ -64,6 +64,7 @@ def _validate_event(
     expected_time: float,
     time_tolerance: float,
     seen_ids: set[int],
+    seen_swimmer_ids: set[int],
     previous_count: int,
     previous_confirmed_count: int | None,
     require_identity_summary: bool,
@@ -112,6 +113,12 @@ def _validate_event(
             if identity_id in frame_identity_ids:
                 raise ValidationError(f"event {event_index}: duplicate canonical identity_id {identity_id}")
             frame_identity_ids.add(identity_id)
+        swimmer_id = box.get("swimmer_id")
+        if swimmer_id is not None:
+            swimmer_id = _integer(swimmer_id, name="swimmer_id", event_index=event_index)
+            if swimmer_id < 1:
+                raise ValidationError(f"event {event_index}, box {box_index}: swimmer_id must be positive")
+            seen_swimmer_ids.add(swimmer_id)
         track_id = box.get("track_id")
         if track_id is not None:
             track_id = _integer(track_id, name="track_id", event_index=event_index)
@@ -173,6 +180,7 @@ def validate(args: argparse.Namespace) -> dict[str, Any]:
         raise ValidationError(f"expected {args.expected_events} SSE events, received {len(messages)}")
 
     seen_ids: set[int] = set()
+    seen_swimmer_ids: set[int] = set()
     previous_count = 0
     expected_confirmed_identities = getattr(args, "expected_confirmed_identities", None)
     require_identity_summary = expected_confirmed_identities is not None
@@ -202,6 +210,7 @@ def validate(args: argparse.Namespace) -> dict[str, Any]:
             expected_time=event_index / args.fps,
             time_tolerance=args.time_tolerance,
             seen_ids=seen_ids,
+            seen_swimmer_ids=seen_swimmer_ids,
             previous_count=previous_count,
             previous_confirmed_count=previous_confirmed_count,
             require_identity_summary=require_identity_summary,
@@ -234,6 +243,7 @@ def validate(args: argparse.Namespace) -> dict[str, Any]:
         "max_cumulative_track_count": previous_count,
         "sample_track_ids": sorted(seen_ids)[:10],
         "unique_track_ids": len(seen_ids),
+        "confirmed_swimmer_ids": sorted(seen_swimmer_ids),
         "first_time_seconds": timestamps[0],
         "last_time_seconds": timestamps[-1],
         "final_confirmed_identity_count": final_confirmed_count,
