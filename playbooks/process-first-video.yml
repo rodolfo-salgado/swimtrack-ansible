@@ -8,7 +8,9 @@
     video_stem: 20260513_201705_test01
     source_video: "{{ playbook_dir }}/../../input_vids/{{ video_stem }}.mp4"
     source_sha256: c981fbadc43d11999ea63804699dc6edcc3ee4a9d9bd1d33ab73afe7a2457f1d
-    expected_events: "1441"
+    expected_events: "721"
+    expected_fps: "30"
+    expected_confirmed_identities: "1"
     result_dir: "{{ playbook_dir }}/../../results/{{ video_stem }}"
     result_stream: "{{ result_dir }}/stream.sse"
     result_summary: "{{ result_dir }}/summary.json"
@@ -106,9 +108,11 @@
               - --height
               - "1080"
               - --fps
-              - "60"
+              - "{{ expected_fps }}"
               - --time-tolerance
               - "0.002"
+              - --expected-confirmed-identities
+              - "{{ expected_confirmed_identities }}"
           register: contract_validation
           delegate_to: localhost
           changed_when: false

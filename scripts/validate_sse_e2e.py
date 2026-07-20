@@ -65,7 +65,9 @@ def _validate_event(
     time_tolerance: float,
     seen_ids: set[int],
     previous_count: int,
-) -> tuple[int, int, set[int]]:
+    previous_confirmed_count: int | None,
+    require_identity_summary: bool,
+) -> tuple[int, int, set[int], int | None, int | None]:
     if not isinstance(payload, dict):
         raise ValidationError(f"event {event_index}: data must be a JSON object")
     required = {"time", "width", "height", "boxes", "count"}
@@ -87,6 +89,7 @@ def _validate_event(
     if not isinstance(boxes, list):
         raise ValidationError(f"event {event_index}: boxes must be a list")
     frame_ids: set[int] = set()
+    frame_identity_ids: set[int] = set()
     for box_index, box in enumerate(boxes):
         if not isinstance(box, dict):
             raise ValidationError(f"event {event_index}, box {box_index}: box must be an object")
@@ -94,10 +97,26 @@ def _validate_event(
         missing_box = required_box.difference(box)
         if missing_box:
             raise ValidationError(f"event {event_index}, box {box_index}: missing fields {sorted(missing_box)}")
-        track_id = _integer(box["id"], name="id", event_index=event_index)
-        if track_id in frame_ids:
-            raise ValidationError(f"event {event_index}: duplicate track id {track_id}")
-        frame_ids.add(track_id)
+        legacy_id = _integer(box["id"], name="id", event_index=event_index)
+        if legacy_id in frame_ids:
+            raise ValidationError(f"event {event_index}: duplicate legacy box id {legacy_id}")
+        frame_ids.add(legacy_id)
+        identity_id = box.get("identity_id")
+        if identity_id is None:
+            if require_identity_summary:
+                raise ValidationError(f"event {event_index}, box {box_index}: missing identity_id")
+        else:
+            identity_id = _integer(identity_id, name="identity_id", event_index=event_index)
+            if identity_id < 1:
+                raise ValidationError(f"event {event_index}, box {box_index}: identity_id must be positive")
+            if identity_id in frame_identity_ids:
+                raise ValidationError(f"event {event_index}: duplicate canonical identity_id {identity_id}")
+            frame_identity_ids.add(identity_id)
+        track_id = box.get("track_id")
+        if track_id is not None:
+            track_id = _integer(track_id, name="track_id", event_index=event_index)
+            if track_id < 1:
+                raise ValidationError(f"event {event_index}, box {box_index}: track_id must be positive")
         x1 = _number(box["x1"], name="x1", event_index=event_index)
         y1 = _number(box["y1"], name="y1", event_index=event_index)
         x2 = _number(box["x2"], name="x2", event_index=event_index)
@@ -114,7 +133,31 @@ def _validate_event(
         raise ValidationError(f"event {event_index}: count decreased")
     if count != len(seen_ids):
         raise ValidationError(f"event {event_index}: count does not equal the accumulated unique track ids")
-    return len(boxes), count, frame_ids
+
+    identity_summary = payload.get("identity_summary")
+    if identity_summary is None:
+        if require_identity_summary:
+            raise ValidationError(f"event {event_index}: missing identity_summary")
+        return len(boxes), count, frame_ids, None, None
+    if not isinstance(identity_summary, dict):
+        raise ValidationError(f"event {event_index}: identity_summary must be an object")
+    if {"confirmed_count", "active_count"}.difference(identity_summary):
+        raise ValidationError(f"event {event_index}: identity_summary is incomplete")
+    confirmed_count = _integer(
+        identity_summary["confirmed_count"],
+        name="identity_summary.confirmed_count",
+        event_index=event_index,
+    )
+    active_count = _integer(
+        identity_summary["active_count"],
+        name="identity_summary.active_count",
+        event_index=event_index,
+    )
+    if confirmed_count < 0 or active_count < 0 or active_count > confirmed_count:
+        raise ValidationError(f"event {event_index}: identity_summary contains invalid counts")
+    if previous_confirmed_count is not None and confirmed_count < previous_confirmed_count:
+        raise ValidationError(f"event {event_index}: confirmed identity count decreased")
+    return len(boxes), count, frame_ids, confirmed_count, active_count
 
 
 def validate(args: argparse.Namespace) -> dict[str, Any]:
@@ -131,6 +174,12 @@ def validate(args: argparse.Namespace) -> dict[str, Any]:
 
     seen_ids: set[int] = set()
     previous_count = 0
+    expected_confirmed_identities = getattr(args, "expected_confirmed_identities", None)
+    require_identity_summary = expected_confirmed_identities is not None
+    previous_confirmed_count: int | None = None
+    final_confirmed_count: int | None = None
+    max_confirmed_count = 0
+    max_active_count = 0
     frames_with_boxes = 0
     max_boxes = 0
     timestamps: list[float] = []
@@ -139,7 +188,13 @@ def validate(args: argparse.Namespace) -> dict[str, Any]:
             payload = json.loads(data)
         except json.JSONDecodeError as exc:
             raise ValidationError(f"event {event_index}: invalid JSON") from exc
-        boxes_count, previous_count, _ = _validate_event(
+        (
+            boxes_count,
+            previous_count,
+            _,
+            confirmed_count,
+            active_count,
+        ) = _validate_event(
             payload,
             event_index=event_index,
             width=args.width,
@@ -148,11 +203,29 @@ def validate(args: argparse.Namespace) -> dict[str, Any]:
             time_tolerance=args.time_tolerance,
             seen_ids=seen_ids,
             previous_count=previous_count,
+            previous_confirmed_count=previous_confirmed_count,
+            require_identity_summary=require_identity_summary,
         )
+        if confirmed_count is not None:
+            previous_confirmed_count = confirmed_count
+            final_confirmed_count = confirmed_count
+            max_confirmed_count = max(max_confirmed_count, confirmed_count)
+        if active_count is not None:
+            max_active_count = max(max_active_count, active_count)
         timestamps.append(float(payload["time"]))
         if boxes_count:
             frames_with_boxes += 1
         max_boxes = max(max_boxes, boxes_count)
+
+    if require_identity_summary and (
+        final_confirmed_count != expected_confirmed_identities
+        or max_confirmed_count != expected_confirmed_identities
+    ):
+        raise ValidationError(
+            "expected final and maximum confirmed identity count "
+            f"{expected_confirmed_identities}, received final={final_confirmed_count} "
+            f"max={max_confirmed_count}"
+        )
 
     return {
         "event_count": len(messages),
@@ -163,6 +236,9 @@ def validate(args: argparse.Namespace) -> dict[str, Any]:
         "unique_track_ids": len(seen_ids),
         "first_time_seconds": timestamps[0],
         "last_time_seconds": timestamps[-1],
+        "final_confirmed_identity_count": final_confirmed_count,
+        "max_confirmed_identity_count": max_confirmed_count,
+        "max_active_identity_count": max_active_count,
     }
 
 
@@ -174,9 +250,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--height", required=True, type=int)
     parser.add_argument("--fps", required=True, type=float)
     parser.add_argument("--time-tolerance", required=True, type=float)
+    parser.add_argument("--expected-confirmed-identities", type=int)
     args = parser.parse_args()
     if args.expected_events < 1 or args.width < 1 or args.height < 1 or args.fps <= 0 or args.time_tolerance < 0:
         parser.error("all dimensions, event count, and fps must be positive; time tolerance cannot be negative")
+    if args.expected_confirmed_identities is not None and args.expected_confirmed_identities < 1:
+        parser.error("expected-confirmed-identities must be positive")
     return args
 
 

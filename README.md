@@ -93,7 +93,7 @@ La prueba E2E genera temporalmente un clip de dos segundos y 20 frames desde `in
 ./ansible-run ansible-playbook playbooks/e2e-front.yml
 ```
 
-El contrato de transporte y los resultados que se pueden exigir hoy están en `e2e/reference-video.yml`. La prueba exige SSE, un evento por frame, timestamps, dimensiones, cajas válidas y el conteo acumulado de IDs. No exige aún cantidad de nadadores, cajas no vacías ni IDs concretos. `known_good_run` conserva una observación aprobada de la primera corrida real sin convertirla en una regla de producto prematuramente.
+El contrato de transporte y los resultados que se pueden exigir hoy están en `e2e/reference-video.yml`. La prueba exige SSE, un evento por frame, timestamps, dimensiones, cajas válidas y el conteo acumulado legacy de IDs. Para un video con `--expected-confirmed-identities`, además exige `identity_summary` válido en todos los frames y que su máximo y valor final sean el número de personas físicas esperado. `known_good_run` conserva una observación aprobada de la primera corrida real sin convertirla en una regla de producto prematuramente.
 
 ## Evaluación temporal de vueltas
 

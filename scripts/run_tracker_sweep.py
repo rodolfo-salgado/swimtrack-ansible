@@ -259,6 +259,7 @@ def process_video(ansible_run: Path, video: dict[str, Any], result_dir: Path) ->
         "video_stem": video["video_stem"],
         "source_sha256": video["source_sha256"],
         "expected_events": video["expected_events"],
+        "expected_fps": video["fps"],
         "result_dir": str(result_dir),
     }
     _run(
